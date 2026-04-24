@@ -1,0 +1,15 @@
+.booking-page {
+  padding: 2rem 0 4rem;
+}
+
+.booking-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 1000px) {
+  .booking-grid {
+    grid-template-columns: 1fr 360px;
+    align-items: start;
+  }
+}

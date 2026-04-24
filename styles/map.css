@@ -1,0 +1,40 @@
+.map-page {
+  padding: 1rem 0 1.5rem;
+}
+
+.map-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.map-shell {
+  min-height: 60vh;
+  overflow: hidden;
+}
+
+.spot-card-selected {
+  border-color: var(--text-primary);
+  box-shadow: var(--shadow-strong);
+  background: var(--bg-primary);
+}
+
+.spot-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.spot-card-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+}
+
+.spot-card-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
