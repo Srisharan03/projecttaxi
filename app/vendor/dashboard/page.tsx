@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { Card, Badge, Button } from "@/components/ui";
 import { SpotManager } from "@/components/vendor/SpotManager";
+import { useAuthStore } from "@/store/authStore";
 import {
   getSpotSessions,
   subscribeToSpots,
@@ -30,6 +31,7 @@ type SpotWithId = ParkingSpot & { id: string };
 type SessionWithId = Session & { id: string };
 
 export default function VendorDashboardPage() {
+  const user = useAuthStore((state) => state.user);
   const [vendors, setVendors] = useState<VendorWithId[]>([]);
   const [spots, setSpots] = useState<SpotWithId[]>([]);
   const [sessions, setSessions] = useState<SessionWithId[]>([]);
@@ -38,9 +40,6 @@ export default function VendorDashboardPage() {
   useEffect(() => {
     const unsubscribeVendors = subscribeToVendors((rows) => {
       setVendors(rows);
-      if (!vendorId && rows.length) {
-        setVendorId(rows[0].id);
-      }
     });
 
     const unsubscribeSpots = subscribeToSpots((rows) => {
@@ -51,18 +50,34 @@ export default function VendorDashboardPage() {
       unsubscribeVendors();
       unsubscribeSpots();
     };
-  }, [vendorId]);
+  }, []);
+
+  const vendorPool = useMemo(() => {
+    if (!user?.email) {
+      return vendors;
+    }
+
+    return vendors.filter((vendor) => vendor.email.toLowerCase() === user.email.toLowerCase());
+  }, [vendors, user]);
+
+  const effectiveVendorId = useMemo(() => {
+    if (vendorId && vendorPool.some((vendor) => vendor.id === vendorId)) {
+      return vendorId;
+    }
+
+    return vendorPool[0]?.id ?? "";
+  }, [vendorId, vendorPool]);
 
   const selectedVendor = useMemo(() => {
-    return vendors.find((vendor) => vendor.id === vendorId) ?? null;
-  }, [vendors, vendorId]);
+    return vendorPool.find((vendor) => vendor.id === effectiveVendorId) ?? null;
+  }, [vendorPool, effectiveVendorId]);
 
   const vendorSpots = useMemo(() => {
     if (!selectedVendor) {
       return [];
     }
 
-    return spots.filter((spot) => spot.vendor_id === selectedVendor.id);
+    return spots.filter((spot) => spot.vendor_id === selectedVendor.id && spot.is_approved);
   }, [spots, selectedVendor]);
 
   useEffect(() => {
@@ -99,10 +114,10 @@ export default function VendorDashboardPage() {
                 <span className="card-subtitle">Select Vendor Profile</span>
                 <select
                   className="select"
-                  value={vendorId}
+                  value={effectiveVendorId}
                   onChange={(event) => setVendorId(event.target.value)}
                 >
-                  {vendors.map((vendor) => (
+                  {vendorPool.map((vendor) => (
                     <option key={vendor.id} value={vendor.id}>
                       {vendor.name}
                     </option>
@@ -110,11 +125,19 @@ export default function VendorDashboardPage() {
                 </select>
               </label>
 
-              <Link href="/scan">
-                <Button size="lg" style={{ height: "100%", padding: "0 2rem", fontSize: "1.1rem" }}>
-                  📷 Scan QR Code
-                </Button>
-              </Link>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <Link href="/vendor/register">
+                  <Button variant="secondary" size="lg" style={{ height: "100%", padding: "0 1.5rem", fontSize: "1rem" }}>
+                    Register Parking Spot
+                  </Button>
+                </Link>
+
+                <Link href="/scan">
+                  <Button size="lg" style={{ height: "100%", padding: "0 2rem", fontSize: "1.1rem" }}>
+                    📷 Scan QR Code
+                  </Button>
+                </Link>
+              </div>
             </div>
 
             {selectedVendor ? (

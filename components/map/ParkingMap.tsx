@@ -1,130 +1,79 @@
 "use client";
 
-import { useEffect } from "react";
-import {
-  CircleMarker,
-  MapContainer,
-  Popup,
-  Polyline,
-  TileLayer,
-  useMap,
-} from "react-leaflet";
+import { useMemo, useState } from "react";
+import { GoogleMap, InfoWindowF, MarkerF } from "@react-google-maps/api";
 import type { LatLng } from "@/lib/firestore";
 import type { RankedSpot } from "@/lib/optimization";
 
 interface ParkingMapProps {
   spots: RankedSpot[];
-  userLocation: LatLng;
+  destination: LatLng;
   selectedSpotId: string | null;
-  routeCoordinates: LatLng[];
   onSelectSpot: (spotId: string) => void;
 }
 
-function FitToSelection({
-  selectedSpotId,
-  spots,
-  userLocation,
-}: {
-  selectedSpotId: string | null;
-  spots: RankedSpot[];
-  userLocation: LatLng;
-}) {
-  const map = useMap();
+const mapContainerStyle = {
+  height: "100%",
+  minHeight: "60vh",
+  width: "100%",
+  borderRadius: "18px",
+};
 
-  useEffect(() => {
-    if (!selectedSpotId) {
-      map.setView([userLocation.lat, userLocation.lng], 13);
-      return;
-    }
+export function ParkingMap({ spots, destination, selectedSpotId, onSelectSpot }: ParkingMapProps) {
+  const [activeInfoSpotId, setActiveInfoSpotId] = useState<string | null>(null);
 
+  const center = useMemo(() => {
     const selected = spots.find((spot) => spot.id === selectedSpotId);
-    if (!selected) {
-      return;
+    if (selected) {
+      return selected.location;
     }
 
-    map.setView([selected.location.lat, selected.location.lng], 15);
-  }, [selectedSpotId, spots, userLocation, map]);
+    return destination;
+  }, [spots, selectedSpotId, destination]);
 
-  return null;
-}
-
-function markerColor(spot: RankedSpot): string {
-  if (spot.status === "closed") {
-    return "#9ca3af";
-  }
-
-  if (spot.availabilityRatio > 0.5) {
-    return "#10b981";
-  }
-
-  if (spot.availabilityRatio > 0.2) {
-    return "#f59e0b";
-  }
-
-  return "#ef4444";
-}
-
-export function ParkingMap({
-  spots,
-  userLocation,
-  selectedSpotId,
-  routeCoordinates,
-  onSelectSpot,
-}: ParkingMapProps) {
   return (
     <div className="map-shell glass-card">
-      <MapContainer
-        center={[userLocation.lat, userLocation.lng]}
-        zoom={13}
-        style={{ height: "100%", minHeight: "60vh", width: "100%", borderRadius: "18px" }}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      <GoogleMap mapContainerStyle={mapContainerStyle} center={center} zoom={14}>
+        <MarkerF
+          position={destination}
+          icon={{
+            path: window.google.maps.SymbolPath.CIRCLE,
+            fillColor: "#06b6d4",
+            fillOpacity: 0.95,
+            strokeColor: "#0e7490",
+            strokeWeight: 2,
+            scale: 8,
+          }}
+          title="Destination"
         />
 
-        <CircleMarker
-          center={[userLocation.lat, userLocation.lng]}
-          pathOptions={{ color: "#06b6d4", fillColor: "#06b6d4", fillOpacity: 0.6 }}
-          radius={10}
-        >
-          <Popup>You are here</Popup>
-        </CircleMarker>
+        {spots.map((spot) => {
+          const selected = selectedSpotId === spot.id;
 
-        {spots.map((spot) => (
-          <CircleMarker
-            key={spot.id}
-            center={[spot.location.lat, spot.location.lng]}
-            pathOptions={{
-              color: markerColor(spot),
-              fillColor: markerColor(spot),
-              fillOpacity: selectedSpotId === spot.id ? 0.95 : 0.72,
-              weight: selectedSpotId === spot.id ? 3 : 1,
-            }}
-            radius={selectedSpotId === spot.id ? 10 : 8}
-            eventHandlers={{
-              click: () => onSelectSpot(spot.id),
-            }}
-          >
-            <Popup>
-              <strong>{spot.name}</strong>
-              <br />
-              {spot.current_occupancy}/{spot.total_spots} occupied
-              <br />
-              Status: {spot.status}
-            </Popup>
-          </CircleMarker>
-        ))}
-
-        {routeCoordinates.length > 1 ? (
-          <Polyline
-            positions={routeCoordinates.map((point) => [point.lat, point.lng])}
-            pathOptions={{ color: "#06b6d4", weight: 5, opacity: 0.9 }}
-          />
-        ) : null}
-
-        <FitToSelection selectedSpotId={selectedSpotId} spots={spots} userLocation={userLocation} />
-      </MapContainer>
+          return (
+            <MarkerF
+              key={spot.id}
+              position={spot.location}
+              title={spot.name}
+              label={selected ? { text: "P", color: "#111827", fontWeight: "700" } : undefined}
+              onClick={() => {
+                onSelectSpot(spot.id);
+                setActiveInfoSpotId(spot.id);
+              }}
+            >
+              {activeInfoSpotId === spot.id ? (
+                <InfoWindowF onCloseClick={() => setActiveInfoSpotId(null)}>
+                  <div>
+                    <strong>{spot.name}</strong>
+                    <div>{spot.address}</div>
+                    <div>Status: {spot.status}</div>
+                  </div>
+                </InfoWindowF>
+              ) : null}
+            </MarkerF>
+          );
+        })}
+      </GoogleMap>
     </div>
   );
 }

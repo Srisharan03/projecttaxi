@@ -1,27 +1,19 @@
 "use client";
 
+import { useJsApiLoader } from "@react-google-maps/api";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { Badge, Button, Card, Modal } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/ui";
 import { FilterPanel } from "@/components/map/FilterPanel";
 import { SearchBar } from "@/components/map/SearchBar";
 import { SpotList } from "@/components/map/SpotList";
-import { storage } from "@/lib/firebase";
-import {
-  ensurePublicParkingSpots,
-  incrementUserCredits,
-  submitAudit,
-  type SpotStatus,
-} from "@/lib/firestore";
-import { getCurrentPosition, validateLocation } from "@/lib/geofence";
-import { getGoogleMapsDirectionsUrl, getRoute } from "@/lib/routing";
-import { formatDistanceKm, minutesToHoursAndMinutes } from "@/lib/utils";
+import { getSpots } from "@/lib/firestore";
+import { getCurrentPosition } from "@/lib/geofence";
+import { fetchNearbyPublicParkingSpots, geocodeDestination } from "@/lib/googlePlaces";
+import { haversine } from "@/lib/optimization";
+import { getGoogleMapsDirectionsUrl } from "@/lib/routing";
 import { useFilterStore } from "@/store/filterStore";
 import { useParkingStore } from "@/store/parkingStore";
-import type { RankedSpot } from "@/lib/optimization";
-import "leaflet/dist/leaflet.css";
 import "@/styles/map.css";
 
 const DynamicParkingMap = dynamic(
@@ -33,17 +25,22 @@ const DynamicParkingMap = dynamic(
 );
 
 export default function MapPage() {
-  const router = useRouter();
+  const SEARCH_RADIUS_KM = 5;
+  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  const { isLoaded: isGoogleLoaded, loadError } = useJsApiLoader({
+    id: "parksaathi-google-maps",
+    googleMapsApiKey,
+    libraries: ["places"],
+  });
 
   const selectedSpotId = useParkingStore((state) => state.selectedSpotId);
   const userLocation = useParkingStore((state) => state.userLocation);
+  const destinationLocation = useParkingStore((state) => state.destinationLocation);
   const vehicleType = useParkingStore((state) => state.vehicleType);
-  const isLoading = useParkingStore((state) => state.isLoading);
-  const error = useParkingStore((state) => state.error);
-  const startSpotsSubscription = useParkingStore((state) => state.startSpotsSubscription);
-  const stopSpotsSubscription = useParkingStore((state) => state.stopSpotsSubscription);
+  const replaceSpots = useParkingStore((state) => state.replaceSpots);
   const setSelectedSpotId = useParkingStore((state) => state.setSelectedSpotId);
   const setUserLocation = useParkingStore((state) => state.setUserLocation);
+  const setDestinationLocation = useParkingStore((state) => state.setDestinationLocation);
   const setVehicleType = useParkingStore((state) => state.setVehicleType);
   const getRankedSpots = useParkingStore((state) => state.getRankedSpots);
 
@@ -58,38 +55,14 @@ export default function MapPage() {
   const setSortBy = useFilterStore((state) => state.setSortBy);
   const setIncludeClosed = useFilterStore((state) => state.setIncludeClosed);
 
-  const [routeCoordinates, setRouteCoordinates] = useState<Array<{ lat: number; lng: number }>>([]);
-  const [routeMeta, setRouteMeta] = useState<{ distanceMeters: number; durationSeconds: number } | null>(
-    null,
+  const [isSearchingDestination, setIsSearchingDestination] = useState(false);
+  const [destinationStatus, setDestinationStatus] = useState<string>(
+    "Enter a destination and load public parking nearby.",
   );
-  const [routeError, setRouteError] = useState<string>("");
   const [fallbackMapsLink, setFallbackMapsLink] = useState<string>("");
 
-  const [auditSpot, setAuditSpot] = useState<RankedSpot | null>(null);
-  const [auditStatus, setAuditStatus] = useState<SpotStatus>("open");
-  const [auditFile, setAuditFile] = useState<File | null>(null);
-  const [auditSubmitting, setAuditSubmitting] = useState(false);
-  const [auditMessage, setAuditMessage] = useState<string>("");
-
-  useEffect(() => {
-    startSpotsSubscription();
-    return () => stopSpotsSubscription();
-  }, [startSpotsSubscription, stopSpotsSubscription]);
-
-  useEffect(() => {
-    void ensurePublicParkingSpots();
-  }, []);
-
-  useEffect(() => {
-    getCurrentPosition()
-      .then((coords) => setUserLocation(coords))
-      .catch(() => {
-        // Keep default city center for demo stability when geolocation is blocked.
-      });
-  }, [setUserLocation]);
-
   const rankedSpots = getRankedSpots({
-    search: searchTerm,
+    search: "",
     amenities,
     maxHourlyRate,
     includeClosed,
@@ -103,78 +76,112 @@ export default function MapPage() {
   const totalCapacity = rankedSpots.reduce((acc, spot) => acc + spot.total_spots, 0);
   const totalOccupied = rankedSpots.reduce((acc, spot) => acc + spot.current_occupancy, 0);
 
-  const requestRoute = async (spot: RankedSpot) => {
-    setRouteError("");
-    setFallbackMapsLink("");
-
-    try {
-      const route = await getRoute(userLocation, spot.location, vehicleType);
-      setRouteCoordinates(route.coordinates);
-      setRouteMeta({
-        distanceMeters: route.distanceMeters,
-        durationSeconds: route.durationSeconds,
+  useEffect(() => {
+    getCurrentPosition()
+      .then((coords) => {
+        setUserLocation(coords);
+      })
+      .catch(() => {
+        // Keep fallback location when user does not grant GPS permission.
       });
-    } catch (routeFetchError) {
-      setRouteCoordinates([]);
-      setRouteMeta(null);
-      setRouteError(
-        routeFetchError instanceof Error
-          ? routeFetchError.message
-          : "Routing unavailable. Open fallback navigation.",
-      );
-      setFallbackMapsLink(getGoogleMapsDirectionsUrl(userLocation, spot.location));
-    }
-  };
+  }, [setUserLocation]);
 
-  const handleSubmitAudit = async () => {
-    if (!auditSpot || !auditFile) {
-      setAuditMessage("Select a spot photo and try again.");
+  const handleDestinationSearch = async () => {
+    if (!isGoogleLoaded) {
+      setDestinationStatus("Google Maps is still loading. Please try again in a moment.");
       return;
     }
 
-    setAuditSubmitting(true);
-    setAuditMessage("");
+    setIsSearchingDestination(true);
+    setDestinationStatus("Searching destination and loading public parking...");
+    setFallbackMapsLink("");
 
     try {
-      const currentPosition = await getCurrentPosition();
-      const withinRadius = validateLocation(currentPosition, auditSpot.location, 20);
+      const destination = await geocodeDestination(searchTerm);
+      setDestinationLocation(destination.location);
+      setSearchTerm(destination.formattedAddress);
 
-      if (!withinRadius) {
-        setAuditMessage("You must be within 20m of the parking spot to submit an audit.");
-        return;
-      }
+      const [publicSpots, firestoreSpots] = await Promise.all([
+        fetchNearbyPublicParkingSpots(destination.location),
+        getSpots(),
+      ]);
 
-      const storageRef = ref(storage, `audits/${auditSpot.id}/${Date.now()}-${auditFile.name}`);
-      await uploadBytes(storageRef, auditFile);
-      const photoUrl = await getDownloadURL(storageRef);
+      const nearbyVendorSpots = firestoreSpots.filter((spot) => {
+        if (!spot.is_approved) {
+          return false;
+        }
 
-      const result = await submitAudit({
-        spot_id: auditSpot.id,
-        reporter_user_id: "demo-user",
-        reported_status: auditStatus,
-        photo_url: photoUrl,
-        location: currentPosition,
+        if (spot.status !== "open") {
+          return false;
+        }
+
+        return haversine(destination.location, spot.location) <= SEARCH_RADIUS_KM;
       });
 
-      await incrementUserCredits("demo-user", result.credits);
-
-      setAuditMessage(
-        result.conflict
-          ? "Audit submitted. Conflict detected, resolver credits boosted."
-          : "Audit submitted successfully. Credits added.",
+      const mergedNearbySpots = Array.from(
+        new Map(
+          [...nearbyVendorSpots, ...publicSpots].map((spot) => [spot.id, spot]),
+        ).values(),
       );
-      setAuditFile(null);
-    } catch (submitError) {
-      setAuditMessage(submitError instanceof Error ? submitError.message : "Audit submit failed.");
+
+      replaceSpots(mergedNearbySpots);
+      setSelectedSpotId(null);
+
+      setDestinationStatus(
+        mergedNearbySpots.length
+          ? `Found ${mergedNearbySpots.length} nearby parking spots near ${destination.formattedAddress}.`
+          : `No public parking spots found near ${destination.formattedAddress}. Try a wider destination query. Ranking prioritizes destination-near spots with shorter travel from your current location.`,
+      );
+    } catch (searchError) {
+      setDestinationStatus(
+        searchError instanceof Error
+          ? searchError.message
+          : "Destination search failed. Please try again.",
+      );
     } finally {
-      setAuditSubmitting(false);
+      setIsSearchingDestination(false);
     }
   };
+
+  const handleRouteSpot = (spot: (typeof rankedSpots)[number]) => {
+    const link = getGoogleMapsDirectionsUrl(userLocation, spot.location);
+    setFallbackMapsLink(link);
+
+    if (typeof window !== "undefined") {
+      window.open(link, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  if (!googleMapsApiKey) {
+    return (
+      <div className="map-page shell">
+        <section className="section">
+          <Card
+            title="Google Maps API Key Missing"
+            subtitle="Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local to enable destination-based public parking search."
+          />
+        </section>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="map-page shell">
+        <section className="section">
+          <Card
+            title="Google Maps Failed to Load"
+            subtitle="Check your key restrictions and enabled APIs (Maps JavaScript API and Places API)."
+          />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="map-page shell">
       <section className="section">
-        <Card title="Smart Discovery" subtitle="Real-time availability + trust-aware ranking.">
+        <Card title="Destination Public Parking" subtitle="Google Maps + Places API, based on where you want to go.">
           <div className="hero-actions">
             <Badge tone="info">Vehicle profile</Badge>
             <Button
@@ -195,53 +202,33 @@ export default function MapPage() {
             >
               SUV
             </Button>
-            <Badge tone="success">Live Occupancy: {totalOccupied}/{totalCapacity || 0}</Badge>
+            <Badge tone="success">Visible Occupancy: {totalOccupied}/{totalCapacity || 0}</Badge>
           </div>
 
-          {selectedSpot?.conflict_flag ? (
-            <div className="toggle-row" style={{ marginTop: "0.75rem" }}>
-              <Badge tone="warning">Conflicting reports at selected spot</Badge>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setAuditSpot(selectedSpot);
-                  setAuditStatus(selectedSpot.status === "closed" ? "closed" : "open");
-                  setAuditMessage("Verify this spot for 5 credits.");
-                }}
-              >
-                Verify this spot for 5 credits
-              </Button>
-            </div>
-          ) : null}
+          <p className="card-subtitle" style={{ marginTop: "0.75rem" }}>
+            {destinationStatus}
+          </p>
 
-          {routeMeta ? (
-            <p className="card-subtitle" style={{ marginTop: "0.75rem" }}>
-              Route ready: {formatDistanceKm(routeMeta.distanceMeters / 1000)} in{" "}
-              {minutesToHoursAndMinutes(Math.round(routeMeta.durationSeconds / 60))}
-            </p>
-          ) : null}
-
-          {routeError ? (
-            <p className="card-subtitle" style={{ marginTop: "0.75rem", color: "#ffe7b2" }}>
-              {routeError}
-            </p>
-          ) : null}
+          <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
+            Ranking order: closest to destination, then shorter distance from your current location.
+          </p>
 
           {fallbackMapsLink ? (
             <a href={fallbackMapsLink} target="_blank" rel="noopener noreferrer">
               <Button variant="ghost">Open Google Maps fallback</Button>
             </a>
           ) : null}
-
-          {error ? <p className="card-subtitle">{error}</p> : null}
-          {isLoading ? <p className="card-subtitle">Loading live spots...</p> : null}
         </Card>
       </section>
 
       <section className="map-grid">
         <aside className="form-grid">
-          <SearchBar value={searchTerm} onChange={setSearchTerm} />
+          <SearchBar
+            value={searchTerm}
+            onChange={setSearchTerm}
+            onSearchDestination={handleDestinationSearch}
+            isSearching={isSearchingDestination}
+          />
           <FilterPanel
             amenities={amenities}
             maxHourlyRate={maxHourlyRate}
@@ -256,71 +243,27 @@ export default function MapPage() {
             spots={rankedSpots}
             selectedSpotId={selectedSpotId}
             onSelectSpot={(spot) => setSelectedSpotId(spot.id)}
-            onBookSpot={(spot) => router.push(`/booking?spotId=${spot.id}`)}
-            onRouteSpot={requestRoute}
-            onReportSpot={(spot) => {
-              setAuditSpot(spot);
-              setAuditStatus(spot.status === "closed" ? "closed" : "open");
-              setAuditMessage("");
+            onBookSpot={handleRouteSpot}
+            onRouteSpot={handleRouteSpot}
+            onReportSpot={() => {
+              // Vendor audit is intentionally skipped for public Google Places spots.
             }}
           />
         </aside>
 
         <div>
-          <DynamicParkingMap
-            spots={rankedSpots}
-            userLocation={userLocation}
-            selectedSpotId={selectedSpot?.id ?? null}
-            routeCoordinates={routeCoordinates}
-            onSelectSpot={setSelectedSpotId}
-          />
+          {isGoogleLoaded ? (
+            <DynamicParkingMap
+              spots={rankedSpots}
+              destination={destinationLocation}
+              selectedSpotId={selectedSpot?.id ?? null}
+              onSelectSpot={setSelectedSpotId}
+            />
+          ) : (
+            <div className="map-shell glass-card" />
+          )}
         </div>
       </section>
-
-      <Modal
-        open={Boolean(auditSpot)}
-        onClose={() => {
-          setAuditSpot(null);
-          setAuditMessage("");
-        }}
-        title={auditSpot ? `Report ${auditSpot.name}` : "Report Spot"}
-        description="Upload proof near the spot. Conflicts trigger verification rewards."
-        footer={
-          <Button onClick={handleSubmitAudit} isLoading={auditSubmitting}>
-            Submit Audit
-          </Button>
-        }
-      >
-        <div className="form-grid">
-          <label>
-            <span className="card-subtitle">Observed status</span>
-            <select
-              className="select"
-              value={auditStatus}
-              onChange={(event) => setAuditStatus(event.target.value as SpotStatus)}
-            >
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
-          </label>
-
-          <label>
-            <span className="card-subtitle">Photo proof</span>
-            <input
-              className="input"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setAuditFile(file);
-              }}
-            />
-          </label>
-
-          {auditMessage ? <p className="card-subtitle">{auditMessage}</p> : null}
-        </div>
-      </Modal>
     </div>
   );
 }

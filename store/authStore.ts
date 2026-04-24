@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { User } from "firebase/auth";
 import { subscribeToAuthState } from "@/lib/auth";
 
@@ -14,32 +15,40 @@ interface AuthStoreState {
   clearAuth: () => void;
 }
 
-export const useAuthStore = create<AuthStoreState>((set, get) => ({
-  user: null,
-  role: "user",
-  initialized: false,
-  unsubscribeAuth: null,
+export const useAuthStore = create<AuthStoreState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      role: "user",
+      initialized: false,
+      unsubscribeAuth: null,
 
-  initializeAuth: () => {
-    if (get().unsubscribeAuth) {
-      return;
-    }
+      initializeAuth: () => {
+        if (get().unsubscribeAuth) {
+          return;
+        }
 
-    const unsubscribe = subscribeToAuthState((user) => {
-      set({ user, initialized: true });
-    });
+        const unsubscribe = subscribeToAuthState((user) => {
+          set({ user, initialized: true });
+        });
 
-    set({ unsubscribeAuth: unsubscribe });
-  },
+        set({ unsubscribeAuth: unsubscribe });
+      },
 
-  setRole: (role) => set({ role }),
+      setRole: (role) => set({ role }),
 
-  clearAuth: () => {
-    const unsubscribe = get().unsubscribeAuth;
-    if (unsubscribe) {
-      unsubscribe();
-    }
+      clearAuth: () => {
+        const unsubscribe = get().unsubscribeAuth;
+        if (unsubscribe) {
+          unsubscribe();
+        }
 
-    set({ user: null, initialized: false, unsubscribeAuth: null, role: "user" });
-  },
-}));
+        set({ user: null, initialized: false, unsubscribeAuth: null, role: "user" });
+      },
+    }),
+    {
+      name: "parksaathi-auth-store",
+      partialize: (state) => ({ role: state.role }),
+    },
+  ),
+);

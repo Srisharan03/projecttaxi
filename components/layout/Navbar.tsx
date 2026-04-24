@@ -27,6 +27,7 @@ export function Navbar() {
     if (role === "vendor") {
       return [
         { href: "/vendor/dashboard", label: "Dashboard" },
+        { href: "/vendor/register", label: "Register Spot" },
         { href: "/scan", label: "Scan QR" },
       ];
     }

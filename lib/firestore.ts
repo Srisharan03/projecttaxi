@@ -35,6 +35,8 @@ export interface ParkingSpot {
   name: string;
   address: string;
   location: LatLng;
+  size_sqft?: number;
+  size_yards?: number;
   vendor_id: string;
   type: "mall" | "municipal" | "private" | "residential" | "roadside";
   vehicle_types: VehicleType[];
@@ -62,6 +64,7 @@ export interface Vendor {
   name: string;
   email: string;
   phone: string;
+  profile_image?: string;
   status: VendorStatus;
   spots: string[];
   documents: string[];
@@ -105,9 +108,11 @@ export interface Audit {
 export interface VendorRegistrationPayload {
   vendor: Pick<Vendor, "name" | "email" | "phone"> & {
     documents?: string[];
+    profile_image?: string;
     platform_fee_rate?: number;
   };
-  spot: Omit<
+  spots: Array<
+    Omit<
     ParkingSpot,
     | "id"
     | "vendor_id"
@@ -119,6 +124,7 @@ export interface VendorRegistrationPayload {
     | "review_count"
     | "created_at"
     | "updated_at"
+    >
   >;
 }
 
@@ -188,38 +194,81 @@ export async function toggleSpotStatus(spotId: string, status: SpotStatus): Prom
 
 export async function registerVendor(
   payload: VendorRegistrationPayload,
-): Promise<{ vendorId: string; spotId: string }> {
-  const vendorRef = await addDoc(collection(db, "vendors"), {
-    name: payload.vendor.name,
+): Promise<{ vendorId: string; spotIds: string[] }> {
+  if (!payload.spots.length) {
+    throw new Error("At least one parking spot is required.");
+  }
+
+  const start = Date.now();
+  console.log("[Firestore.registerVendor] Request received", {
+    vendorName: payload.vendor.name,
     email: payload.vendor.email,
-    phone: payload.vendor.phone,
-    status: "pending",
-    spots: [],
-    documents: payload.vendor.documents ?? [],
-    revenue_earned: 0,
-    platform_fee_rate: payload.vendor.platform_fee_rate ?? 0.15,
-    created_at: serverTimestamp(),
+    spotCount: payload.spots.length,
   });
 
-  const spotRef = await addDoc(collection(db, "parking_spots"), {
-    ...payload.spot,
-    vendor_id: vendorRef.id,
-    current_occupancy: 0,
-    status: "open",
-    is_approved: false,
-    trust_score: 80,
-    rating: 0,
-    review_count: 0,
-    conflict_flag: false,
-    created_at: serverTimestamp(),
-    updated_at: serverTimestamp(),
-  });
+  try {
+    const vendorRef = await addDoc(collection(db, "vendors"), {
+      name: payload.vendor.name,
+      email: payload.vendor.email,
+      phone: payload.vendor.phone,
+      profile_image: payload.vendor.profile_image ?? "",
+      status: "pending",
+      spots: [],
+      documents: payload.vendor.documents ?? [],
+      revenue_earned: 0,
+      platform_fee_rate: payload.vendor.platform_fee_rate ?? 0.15,
+      created_at: serverTimestamp(),
+    });
 
-  await updateDoc(doc(db, "vendors", vendorRef.id), {
-    spots: [spotRef.id],
-  });
+    console.log("[Firestore.registerVendor] Vendor document created", {
+      vendorId: vendorRef.id,
+      durationMs: Date.now() - start,
+    });
 
-  return { vendorId: vendorRef.id, spotId: spotRef.id };
+    const spotIds = await Promise.all(
+      payload.spots.map(async (spot, index) => {
+        const spotRef = await addDoc(collection(db, "parking_spots"), {
+          ...spot,
+          vendor_id: vendorRef.id,
+          current_occupancy: 0,
+          status: "open",
+          is_approved: false,
+          trust_score: 80,
+          rating: 0,
+          review_count: 0,
+          conflict_flag: false,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        console.log("[Firestore.registerVendor] Spot document created", {
+          index,
+          spotId: spotRef.id,
+          name: spot.name,
+          lat: spot.location.lat,
+          lng: spot.location.lng,
+          imagesCount: spot.images.length,
+        });
+
+        return spotRef.id;
+      }),
+    );
+
+    await updateDoc(doc(db, "vendors", vendorRef.id), {
+      spots: spotIds,
+    });
+
+    console.log("[Firestore.registerVendor] Vendor spot list updated", {
+      vendorId: vendorRef.id,
+      spotIds,
+      totalMs: Date.now() - start,
+    });
+
+    return { vendorId: vendorRef.id, spotIds };
+  } catch (error) {
+    console.error("[Firestore.registerVendor] Failed", error);
+    throw error;
+  }
 }
 
 export async function getVendors(): Promise<Array<Vendor & { id: string }>> {
@@ -515,7 +564,8 @@ export async function ensurePublicParkingSpots(): Promise<void> {
       continue;
     }
 
-    const { id, ...spotPayload } = spot;
+    const spotPayload = { ...spot };
+    delete spotPayload.id;
     await setDoc(spotRef, {
       ...spotPayload,
       created_at: serverTimestamp(),

@@ -27,14 +27,17 @@ interface ParkingStoreState {
   spots: ParkingSpotWithId[];
   selectedSpotId: string | null;
   userLocation: LatLng;
+  destinationLocation: LatLng;
   vehicleType: VehicleType;
   isLoading: boolean;
   error: string | null;
   unsubscribeSpots: (() => void) | null;
   startSpotsSubscription: () => void;
   stopSpotsSubscription: () => void;
+  replaceSpots: (spots: ParkingSpotWithId[]) => void;
   setSelectedSpotId: (spotId: string | null) => void;
   setUserLocation: (location: LatLng) => void;
+  setDestinationLocation: (location: LatLng) => void;
   setVehicleType: (vehicleType: VehicleType) => void;
   getRankedSpots: (filters?: RankedSpotFilters) => RankedSpot[];
 }
@@ -43,6 +46,7 @@ export const useParkingStore = create<ParkingStoreState>((set, get) => ({
   spots: [],
   selectedSpotId: null,
   userLocation: HYDERABAD_CENTER,
+  destinationLocation: HYDERABAD_CENTER,
   vehicleType: "car",
   isLoading: false,
   error: null,
@@ -89,13 +93,28 @@ export const useParkingStore = create<ParkingStoreState>((set, get) => ({
     set({ unsubscribeSpots: null });
   },
 
+  replaceSpots: (spots) => {
+    const uniqueById = Array.from(new Map(spots.map((spot) => [spot.id, spot])).values());
+    set({
+      spots: uniqueById,
+      isLoading: false,
+      error: null,
+    });
+  },
+
   setSelectedSpotId: (selectedSpotId) => set({ selectedSpotId }),
   setUserLocation: (userLocation) => set({ userLocation }),
+  setDestinationLocation: (destinationLocation) => set({ destinationLocation }),
   setVehicleType: (vehicleType) => set({ vehicleType }),
 
   getRankedSpots: (filters) => {
     const state = get();
-    const ranked = rankSpots(state.spots, state.userLocation, state.vehicleType);
+    const ranked = rankSpots(
+      state.spots,
+      state.userLocation,
+      state.destinationLocation,
+      state.vehicleType,
+    );
 
     const searched = ranked.filter((spot) => {
       const search = (filters?.search || "").trim().toLowerCase();
@@ -134,7 +153,13 @@ export const useParkingStore = create<ParkingStoreState>((set, get) => ({
     });
 
     if (filters?.sortBy === "distance") {
-      return [...openStateFiltered].sort((a, b) => a.distanceKm - b.distanceKm);
+      return [...openStateFiltered].sort((a, b) => {
+        if (a.destinationDistanceKm !== b.destinationDistanceKm) {
+          return a.destinationDistanceKm - b.destinationDistanceKm;
+        }
+
+        return a.currentDistanceKm - b.currentDistanceKm;
+      });
     }
 
     if (filters?.sortBy === "price") {

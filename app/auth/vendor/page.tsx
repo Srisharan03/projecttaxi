@@ -6,6 +6,14 @@ import { Card, Button } from "@/components/ui";
 import { loginWithEmail, registerWithEmail } from "@/lib/auth";
 import { useAuthStore } from "@/store/authStore";
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Authentication failed";
+}
+
 export default function VendorAuthPage() {
   const router = useRouter();
   const setRole = useAuthStore((state) => state.setRole);
@@ -24,13 +32,15 @@ export default function VendorAuthPage() {
     try {
       if (isLogin) {
         await loginWithEmail(email, password);
+        setRole("vendor");
+        router.push("/vendor/dashboard");
       } else {
         await registerWithEmail(email, password);
+        setRole("vendor");
+        router.push("/vendor/register");
       }
-      setRole("vendor");
-      router.push("/vendor/dashboard");
-    } catch (err: any) {
-      setError(err.message || "Authentication failed");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

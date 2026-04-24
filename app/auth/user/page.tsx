@@ -4,9 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button } from "@/components/ui";
 import { loginWithEmail, registerWithEmail } from "@/lib/auth";
+import { useAuthStore } from "@/store/authStore";
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Authentication failed";
+}
 
 export default function UserAuthPage() {
   const router = useRouter();
+  const setRole = useAuthStore((state) => state.setRole);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,9 +36,10 @@ export default function UserAuthPage() {
         await registerWithEmail(email, password);
         // In a real app, we would save the name and vehicle type to Firestore here
       }
+      setRole("user");
       router.push("/map");
-    } catch (err: any) {
-      setError(err.message || "Authentication failed");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

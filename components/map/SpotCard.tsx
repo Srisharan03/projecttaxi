@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Badge, Button, Card } from "@/components/ui";
 import type { RankedSpot } from "@/lib/optimization";
 import { formatCurrency, formatDistanceKm } from "@/lib/utils";
@@ -25,6 +26,7 @@ function getAvailabilityTone(spot: RankedSpot): "success" | "warning" | "danger"
 
 export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }: SpotCardProps) {
   const occupancyText = `${spot.current_occupancy}/${spot.total_spots} occupied`;
+  const previewImage = spot.images?.[0] ?? "";
 
   return (
     <Card
@@ -41,22 +43,38 @@ export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }
         }
       }}
     >
+      {previewImage ? (
+        <div style={{ marginBottom: "0.75rem" }}>
+          <Image
+            src={previewImage}
+            alt={`${spot.name} preview`}
+            width={800}
+            height={320}
+            style={{ width: "100%", height: "140px", objectFit: "cover", borderRadius: "12px" }}
+          />
+        </div>
+      ) : null}
+
       <div className="spot-card-grid">
         <div>
           <div className="spot-card-label">Rate</div>
           <div className="spot-card-value">{formatCurrency(spot.pricing.hourly_rate)}/hr</div>
         </div>
         <div>
-          <div className="spot-card-label">Distance</div>
-          <div className="spot-card-value">{formatDistanceKm(spot.distanceKm)}</div>
+          <div className="spot-card-label">From You</div>
+          <div className="spot-card-value">{formatDistanceKm(spot.currentDistanceKm)}</div>
         </div>
         <div>
-          <div className="spot-card-label">Occupancy</div>
-          <Badge tone={getAvailabilityTone(spot)}>{occupancyText}</Badge>
+          <div className="spot-card-label">To Destination</div>
+          <div className="spot-card-value">{formatDistanceKm(spot.destinationDistanceKm)}</div>
         </div>
         <div>
           <div className="spot-card-label">Trust</div>
           <div className="spot-card-value">{spot.trust_score}/100</div>
+        </div>
+        <div>
+          <div className="spot-card-label">Occupancy</div>
+          <Badge tone={getAvailabilityTone(spot)}>{occupancyText}</Badge>
         </div>
       </div>
 
@@ -68,7 +86,7 @@ export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }
           {spot.conflict_flag ? "Verify" : "Audit"}
         </Button>
         <Button style={{ gridColumn: "span 2" }} onClick={onBook} disabled={spot.status !== "open"}>
-          {spot.status === "open" ? "Reserve Parking" : "Vendor Closed"}
+          {spot.status === "open" ? "Open in Google Maps" : "Closed"}
         </Button>
       </div>
     </Card>

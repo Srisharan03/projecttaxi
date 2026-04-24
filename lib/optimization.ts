@@ -1,13 +1,16 @@
 import type { ParkingSpot, VehicleType, LatLng } from "@/lib/firestore";
 
-const DISTANCE_WEIGHT = 0.4;
-const PRICE_WEIGHT = 0.3;
-const TRUST_WEIGHT = 0.3;
+const DESTINATION_DISTANCE_WEIGHT = 0.55;
+const CURRENT_DISTANCE_WEIGHT = 0.25;
+const PRICE_WEIGHT = 0.1;
+const TRUST_WEIGHT = 0.1;
 
 export interface RankedSpot extends ParkingSpot {
   id: string;
   score: number;
   distanceKm: number;
+  currentDistanceKm: number;
+  destinationDistanceKm: number;
   availabilityRatio: number;
 }
 
@@ -39,7 +42,8 @@ function normalize(value: number, min: number, max: number): number {
 
 export function rankSpots(
   spots: Array<ParkingSpot & { id: string }>,
-  userLocation: LatLng,
+  currentLocation: LatLng,
+  destinationLocation: LatLng,
   vehicleType: VehicleType,
 ): RankedSpot[] {
   const filtered = spots.filter((spot) => {
@@ -53,32 +57,41 @@ export function rankSpots(
     return [];
   }
 
-  const distances = filtered.map((spot) => haversine(userLocation, spot.location));
+  const destinationDistances = filtered.map((spot) => haversine(destinationLocation, spot.location));
+  const currentDistances = filtered.map((spot) => haversine(currentLocation, spot.location));
   const prices = filtered.map((spot) => spot.pricing.hourly_rate);
 
-  const minDist = Math.min(...distances);
-  const maxDist = Math.max(...distances);
+  const minDestinationDist = Math.min(...destinationDistances);
+  const maxDestinationDist = Math.max(...destinationDistances);
+  const minCurrentDist = Math.min(...currentDistances);
+  const maxCurrentDist = Math.max(...currentDistances);
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
 
   return filtered
     .map((spot, index) => {
-      const rawDistance = distances[index];
+      const rawDestinationDistance = destinationDistances[index];
+      const rawCurrentDistance = currentDistances[index];
       const rawPrice = prices[index];
 
-      const distanceScore = 1 - normalize(rawDistance, minDist, maxDist);
+      const destinationDistanceScore =
+        1 - normalize(rawDestinationDistance, minDestinationDist, maxDestinationDist);
+      const currentDistanceScore = 1 - normalize(rawCurrentDistance, minCurrentDist, maxCurrentDist);
       const priceScore = 1 - normalize(rawPrice, minPrice, maxPrice);
       const trustScore = Math.max(0, Math.min(spot.trust_score, 100)) / 100;
 
       const score =
-        DISTANCE_WEIGHT * distanceScore +
+        DESTINATION_DISTANCE_WEIGHT * destinationDistanceScore +
+        CURRENT_DISTANCE_WEIGHT * currentDistanceScore +
         PRICE_WEIGHT * priceScore +
         TRUST_WEIGHT * trustScore;
 
       return {
         ...spot,
         score: Number(score.toFixed(4)),
-        distanceKm: rawDistance,
+        distanceKm: rawCurrentDistance,
+        currentDistanceKm: rawCurrentDistance,
+        destinationDistanceKm: rawDestinationDistance,
         availabilityRatio: Math.max(spot.total_spots - spot.current_occupancy, 0) / spot.total_spots,
       };
     })

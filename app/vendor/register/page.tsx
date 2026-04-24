@@ -6,10 +6,10 @@ export default function VendorRegisterPage() {
   return (
     <div className="vendor-page shell">
       <section className="section">
-        <Card title="Vendor Registration" subtitle="Add your parking inventory to ParkSaathi.">
+        <Card title="Vendor Registration" subtitle="Create your profile and register one or more parking spots.">
           <p className="card-subtitle">
-            Provide your business details, upload verification docs, and submit your spot listing for
-            admin approval.
+            Step 1 collects vendor details and profile image. Step 2 lets you add multiple parking
+            spots with photos, size, location, amenities, and pricing.
           </p>
         </Card>
       </section>
