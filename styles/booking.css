@@ -13,3 +13,21 @@
     align-items: start;
   }
 }
+
+.booking-detail-modal {
+  width: min(1100px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.booking-modal-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 1000px) {
+  .booking-modal-grid {
+    grid-template-columns: 1fr 360px;
+    align-items: start;
+  }
+}

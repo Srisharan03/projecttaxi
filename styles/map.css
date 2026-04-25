@@ -18,6 +18,14 @@
   background: var(--bg-primary);
 }
 
+.spot-card-public {
+  border-left: 4px solid #0284c7;
+}
+
+.spot-card-vendor {
+  border-left: 4px solid #0f766e;
+}
+
 .spot-card-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -37,4 +45,98 @@
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.public-audit-modal {
+  width: min(46rem, 100%);
+  max-height: calc(100dvh - 1rem);
+}
+
+.public-audit-grid {
+  gap: 1rem;
+}
+
+.public-audit-address {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.public-audit-latest-card,
+.public-audit-history-item {
+  padding: 0.9rem;
+}
+
+.public-audit-latest-badges,
+.public-audit-history-badges {
+  margin-bottom: 0.4rem;
+}
+
+.public-audit-message {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+.public-audit-time {
+  margin-top: 0.35rem;
+}
+
+.public-audit-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.public-audit-field-label {
+  margin: 0;
+}
+
+.public-audit-textarea {
+  min-height: 112px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.public-audit-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  justify-self: end;
+}
+
+.public-audit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.public-audit-history-list {
+  max-height: 34dvh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.public-audit-success {
+  color: #166534;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.public-audit-error {
+  color: #b91c1c;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .public-audit-modal {
+    width: min(100%, 100%);
+  }
+
+  .public-audit-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .public-audit-history-list {
+    max-height: 40dvh;
+  }
 }

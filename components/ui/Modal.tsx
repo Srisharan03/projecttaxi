@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface ModalProps {
@@ -37,11 +38,28 @@ export function Modal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
-  return (
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
     <div className="modal-overlay" role="presentation" onClick={onClose}>
       <section
         className={cn("modal-content glass-card", className)}
@@ -61,6 +79,7 @@ export function Modal({
         <div className="modal-body">{children}</div>
         {footer ? <footer className="modal-footer">{footer}</footer> : null}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

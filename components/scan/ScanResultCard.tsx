@@ -7,12 +7,12 @@ interface ScanResultCardProps {
 
 export function ScanResultCard({ status, message }: ScanResultCardProps) {
   return (
-    <Card title="Scan Status" subtitle="Session update result.">
+    <Card title="Verification Status" subtitle="Session update result.">
       <div className="form-grid">
         <Badge tone={status === "success" ? "success" : status === "error" ? "danger" : "neutral"}>
           {status.toUpperCase()}
         </Badge>
-        <p className="card-subtitle">{message || "Scan QR to begin."}</p>
+        <p className="card-subtitle">{message || "Enter OTP and verify to begin."}</p>
       </div>
     </Card>
   );

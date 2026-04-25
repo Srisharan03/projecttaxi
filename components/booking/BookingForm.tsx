@@ -3,8 +3,8 @@ import type { VehicleType } from "@/lib/firestore";
 
 export interface BookingDraft {
   date: string;
-  time: string;
-  durationMinutes: number;
+  startTime: string;
+  endTime: string;
   vehicleNumber: string;
   vehicleType: VehicleType;
 }
@@ -27,7 +27,7 @@ export function BookingForm({
   loading,
 }: BookingFormProps) {
   return (
-    <Card title="Booking Details" subtitle="Confirm slot details and generate QR pass.">
+    <Card title="Booking Details" subtitle="Create a booking request for vendor approval.">
       <div className="form-grid">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
           <label>
@@ -40,27 +40,23 @@ export function BookingForm({
             />
           </label>
           <label>
-            <span className="card-subtitle">Time</span>
+            <span className="card-subtitle">Start Time</span>
             <input
               type="time"
               className="input"
-              value={value.time}
-              onChange={(event) => onChange({ ...value, time: event.target.value })}
+              value={value.startTime}
+              onChange={(event) => onChange({ ...value, startTime: event.target.value })}
             />
           </label>
         </div>
 
         <label>
-          <span className="card-subtitle">Duration (minutes)</span>
+          <span className="card-subtitle">End Time</span>
           <input
             className="input"
-            type="number"
-            min={30}
-            step={15}
-            value={value.durationMinutes}
-            onChange={(event) =>
-              onChange({ ...value, durationMinutes: Number(event.target.value) || 30 })
-            }
+            type="time"
+            value={value.endTime}
+            onChange={(event) => onChange({ ...value, endTime: event.target.value })}
           />
         </label>
 
@@ -85,12 +81,12 @@ export function BookingForm({
         </label>
 
         <div className="toggle-row">
-          <span>Estimated Amount</span>
+          <span>Fixed Booking Amount</span>
           <strong>Rs {Math.round(amount)}</strong>
         </div>
 
         <Button onClick={onSubmit} disabled={disabled} isLoading={loading}>
-          Book & Generate QR
+          Create Booking Request
         </Button>
       </div>
     </Card>

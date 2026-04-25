@@ -9,7 +9,7 @@ interface ReceiptCardProps {
 
 export function ReceiptCard({ session }: ReceiptCardProps) {
   return (
-    <Card title="Payment Receipt" subtitle="Booking confirmed. Use scanner for check-in/out.">
+    <Card title="Payment Receipt" subtitle="Booking confirmed. Use OTP verification for check-in/out.">
       <div className="form-grid">
         <div className="toggle-row">
           <span>Session</span>
@@ -29,7 +29,7 @@ export function ReceiptCard({ session }: ReceiptCardProps) {
         </div>
         <div className="hero-actions">
           <Link href="/scan">
-            <Button>Scan QR</Button>
+            <Button>Verify OTP</Button>
           </Link>
           <Link href={`/map?spotId=${session.spot_id}`}>
             <Button variant="secondary">Navigate to Spot</Button>

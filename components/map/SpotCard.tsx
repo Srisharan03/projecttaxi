@@ -24,16 +24,29 @@ function getAvailabilityTone(spot: RankedSpot): "success" | "warning" | "danger"
   return "danger";
 }
 
-export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }: SpotCardProps) {
+export function SpotCard({
+  spot,
+  selected,
+  onSelect,
+  onBook,
+  onRoute,
+  onReport,
+}: SpotCardProps) {
   const occupancyText = `${spot.current_occupancy}/${spot.total_spots} occupied`;
   const previewImage = spot.images?.[0] ?? "";
+  const isPublicSpot = spot.vendor_id === "google-public";
 
   return (
     <Card
-      className={selected ? "spot-card-selected" : ""}
+      className={`${selected ? "spot-card-selected" : ""} ${isPublicSpot ? "spot-card-public" : "spot-card-vendor"}`}
       title={spot.name}
       subtitle={spot.address}
-      actions={<Badge tone={spot.status === "open" ? "success" : "neutral"}>{spot.status}</Badge>}
+      actions={
+        <div className="hero-actions">
+          <Badge tone={isPublicSpot ? "info" : "success"}>{isPublicSpot ? "Public" : "Vendor"}</Badge>
+          <Badge tone={spot.status === "open" ? "success" : "neutral"}>{spot.status}</Badge>
+        </div>
+      }
       onClick={onSelect}
       role="button"
       tabIndex={0}
@@ -65,6 +78,10 @@ export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }
           <div className="spot-card-value">{formatDistanceKm(spot.currentDistanceKm)}</div>
         </div>
         <div>
+          <div className="spot-card-label">ETA</div>
+          <div className="spot-card-value">~{spot.routeEtaMinutes} min</div>
+        </div>
+        <div>
           <div className="spot-card-label">To Destination</div>
           <div className="spot-card-value">{formatDistanceKm(spot.destinationDistanceKm)}</div>
         </div>
@@ -76,6 +93,10 @@ export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }
           <div className="spot-card-label">Occupancy</div>
           <Badge tone={getAvailabilityTone(spot)}>{occupancyText}</Badge>
         </div>
+        <div>
+          <div className="spot-card-label">Route Fit</div>
+          <div className="spot-card-value">{spot.routeLabel}</div>
+        </div>
       </div>
 
       <div className="hero-actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
@@ -85,9 +106,17 @@ export function SpotCard({ spot, selected, onSelect, onBook, onRoute, onReport }
         <Button size="sm" variant="ghost" onClick={onReport}>
           {spot.conflict_flag ? "Verify" : "Audit"}
         </Button>
-        <Button style={{ gridColumn: "span 2" }} onClick={onBook} disabled={spot.status !== "open"}>
-          {spot.status === "open" ? "Open in Google Maps" : "Closed"}
-        </Button>
+        {isPublicSpot ? (
+          <Button style={{ gridColumn: "span 2" }} onClick={onRoute} disabled={spot.status !== "open"}>
+            {spot.status === "open" ? "Navigate (Public Spot)" : "Closed"}
+          </Button>
+        ) : (
+          <>
+            <Button style={{ gridColumn: "span 2" }} onClick={onBook} disabled={spot.status !== "open"}>
+              Book Slot
+            </Button>
+          </>
+        )}
       </div>
     </Card>
   );

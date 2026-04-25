@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import { Badge, Button, Card } from "@/components/ui";
-import { storage } from "@/lib/firebase";
+import { useGoogleMapsLoader } from "@/components/providers/GoogleMapsProvider";
 import { getCurrentPosition } from "@/lib/geofence";
 import { registerVendor, type VehicleType } from "@/lib/firestore";
 
@@ -55,6 +56,21 @@ const INITIAL_STATE: RegistrationState = {
   platformFeeRate: "0.15",
 };
 
+const MAX_IMAGE_DIMENSION = 1200;
+const MAX_FILES_PER_GROUP = 3;
+const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+const DEFAULT_SPOT_LOCATION = { lat: 17.385, lng: 78.4867 };
+const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+
+interface FilePreviewItem {
+  name: string;
+  size: number;
+  isImage: boolean;
+  typeLabel: string;
+  previewUrl: string | null;
+}
+
 function debugLog(message: string, meta?: unknown): void {
   if (meta !== undefined) {
     console.log(`[VendorRegistration] ${message}`, meta);
@@ -64,13 +80,103 @@ function debugLog(message: string, meta?: unknown): void {
   console.log(`[VendorRegistration] ${message}`);
 }
 
-function createSpotDraft(seed?: number): SpotDraft {
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function toTypeLabel(file: File): string {
+  if (file.type === "application/pdf") {
+    return "PDF";
+  }
+
+  if (file.type.startsWith("image/")) {
+    return "Image";
+  }
+
+  return "File";
+}
+
+function FilePreviewGrid({
+  files,
+  emptyText,
+}: {
+  files: FileList | null;
+  emptyText: string;
+}) {
+  const items: FilePreviewItem[] = useMemo(() => {
+    if (!files?.length) {
+      return [];
+    }
+
+    return Array.from(files).map((file) => {
+      const isImage = file.type.startsWith("image/");
+      const previewUrl = isImage ? URL.createObjectURL(file) : null;
+
+      return {
+        name: file.name,
+        size: file.size,
+        isImage,
+        typeLabel: toTypeLabel(file),
+        previewUrl,
+      };
+    });
+  }, [files]);
+
+  useEffect(() => {
+    return () => {
+      items.forEach((item) => {
+        if (item.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+    };
+  }, [items]);
+
+  if (!items.length) {
+    return <p className="vendor-upload-empty">{emptyText}</p>;
+  }
+
+  return (
+    <div className="vendor-preview-grid">
+      {items.map((item) => (
+        <article className="vendor-preview-card" key={`${item.name}-${item.size}`}>
+          {item.isImage && item.previewUrl ? (
+            <Image
+              className="vendor-preview-image"
+              src={item.previewUrl}
+              alt={item.name}
+              width={240}
+              height={160}
+              unoptimized
+            />
+          ) : (
+            <div className="vendor-preview-file-tag">{item.typeLabel}</div>
+          )}
+          <p className="vendor-preview-name" title={item.name}>
+            {item.name}
+          </p>
+          <p className="vendor-preview-size">{formatFileSize(item.size)}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function createSpotDraft(id: string): SpotDraft {
   return {
-    id: `${Date.now()}-${seed ?? Math.random()}`,
+    id,
     spotName: "",
     address: "",
-    lat: "17.385",
-    lng: "78.4867",
+    lat: "",
+    lng: "",
     spotType: "private",
     flatRate: "50",
     hourlyRate: "80",
@@ -85,13 +191,36 @@ function createSpotDraft(seed?: number): SpotDraft {
   };
 }
 
-async function uploadFiles(folder: string, files: FileList | null): Promise<string[]> {
+function getSpotCoordinates(spot: SpotDraft): { lat: number; lng: number } {
+  const lat = Number(spot.lat);
+  const lng = Number(spot.lng);
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { lat, lng };
+  }
+
+  return DEFAULT_SPOT_LOCATION;
+}
+
+async function uploadFilesToCloudinary(label: string, files: FileList | null): Promise<string[]> {
   if (!files?.length) {
-    debugLog(`No files selected for ${folder}`);
+    debugLog(`No files selected for ${label}`);
     return [];
   }
 
-  debugLog(`Starting upload batch for ${folder}`, { count: files.length });
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error(
+      "Cloudinary is not configured. Add NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET in .env.local.",
+    );
+  }
+
+  if (files.length > MAX_FILES_PER_GROUP) {
+    throw new Error(
+      `${label}: You can upload maximum ${MAX_FILES_PER_GROUP} files.`,
+    );
+  }
+
+  debugLog(`Starting Cloudinary upload batch for ${label}`, { count: files.length });
 
   const compressImageFile = async (file: File): Promise<Blob> => {
     if (!file.type.startsWith("image/")) {
@@ -104,8 +233,7 @@ async function uploadFiles(folder: string, files: FileList | null): Promise<stri
 
     const compressionStart = performance.now();
     const imageBitmap = await createImageBitmap(file);
-    const maxDimension = 1600;
-    const scale = Math.min(1, maxDimension / Math.max(imageBitmap.width, imageBitmap.height));
+    const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(imageBitmap.width, imageBitmap.height));
 
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(imageBitmap.width * scale));
@@ -135,31 +263,49 @@ async function uploadFiles(folder: string, files: FileList | null): Promise<stri
   };
 
   const uploads = Array.from(files).map(async (file) => {
-    const uploadStart = performance.now();
+    const conversionStart = performance.now();
 
     try {
       const content = await compressImageFile(file);
-      const fileRef = ref(storage, `${folder}/${Date.now()}-${file.name}`);
-      await uploadBytes(fileRef, content, {
-        contentType: file.type.startsWith("image/") ? "image/jpeg" : file.type,
-      });
-      const url = await getDownloadURL(fileRef);
+      const formData = new FormData();
+      formData.append("file", content, file.name);
+      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+      formData.append("folder", label);
 
-      debugLog(`Uploaded ${file.name}`, {
-        folder,
-        uploadMs: Number((performance.now() - uploadStart).toFixed(2)),
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`${label}: Cloudinary upload failed for ${file.name}. ${errorText}`);
+      }
+
+      const payload = (await response.json()) as { secure_url?: string };
+      if (!payload.secure_url) {
+        throw new Error(`${label}: Cloudinary did not return a secure URL for ${file.name}.`);
+      }
+
+      debugLog(`Uploaded ${file.name} to Cloudinary`, {
+        label,
+        conversionMs: Number((performance.now() - conversionStart).toFixed(2)),
         finalKB: Number((content.size / 1024).toFixed(2)),
+        url: payload.secure_url,
       });
 
-      return url;
+      return payload.secure_url;
     } catch (error) {
-      console.error(`[VendorRegistration] Upload failed for ${file.name}`, error);
+      console.error(`[VendorRegistration] Cloudinary upload failed for ${file.name}`, error);
       throw error;
     }
   });
 
   const urls = await Promise.all(uploads);
-  debugLog(`Completed upload batch for ${folder}`, { uploaded: urls.length });
+  debugLog(`Completed Cloudinary upload batch for ${label}`, { uploaded: urls.length });
   return urls;
 }
 
@@ -182,10 +328,12 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMes
 }
 
 export function RegistrationForm() {
+  const { isLoaded: isLocationMapReady, loadError: locationMapError } = useGoogleMapsLoader();
   const [step, setStep] = useState<"vendor" | "spots">("vendor");
   const [state, setState] = useState<RegistrationState>(INITIAL_STATE);
   const [vendorImage, setVendorImage] = useState<FileList | null>(null);
-  const [spotDrafts, setSpotDrafts] = useState<SpotDraft[]>([createSpotDraft(0)]);
+  const [spotDrafts, setSpotDrafts] = useState<SpotDraft[]>([createSpotDraft("spot-0")]);
+  const [spotSequence, setSpotSequence] = useState(1);
   const [documents, setDocuments] = useState<FileList | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState("");
@@ -227,7 +375,8 @@ export function RegistrationForm() {
   };
 
   const addSpot = () => {
-    setSpotDrafts((current) => [...current, createSpotDraft(current.length)]);
+    setSpotDrafts((current) => [...current, createSpotDraft(`spot-${spotSequence}`)]);
+    setSpotSequence((current) => current + 1);
   };
 
   const removeSpot = (spotId: string) => {
@@ -326,8 +475,8 @@ export function RegistrationForm() {
     try {
       const coords = await getCurrentPosition();
       updateSpot(spotId, {
-        lat: String(coords.lat),
-        lng: String(coords.lng),
+        lat: coords.lat.toFixed(6),
+        lng: coords.lng.toFixed(6),
       });
       setError("");
     } catch (locationError) {
@@ -335,6 +484,57 @@ export function RegistrationForm() {
         locationError instanceof Error
           ? locationError.message
           : "Unable to fetch current location for this spot.",
+      );
+    }
+  };
+
+  const setSpotCoordinatesFromMap = (spotId: string, lat: number, lng: number) => {
+    updateSpot(spotId, {
+      lat: lat.toFixed(6),
+      lng: lng.toFixed(6),
+    });
+    setError("");
+  };
+
+  const setSpotCoordinatesFromAddress = async (spotId: string) => {
+    const targetSpot = spotDrafts.find((spot) => spot.id === spotId);
+    if (!targetSpot) {
+      return;
+    }
+
+    if (!targetSpot.address.trim()) {
+      setError("Enter the spot address first, then use 'Set Pin From Address'.");
+      return;
+    }
+
+    if (!isLocationMapReady || typeof window === "undefined" || !window.google?.maps) {
+      setError("Map is still loading. Try again in a moment.");
+      return;
+    }
+
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      const results = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+        geocoder.geocode({ address: targetSpot.address.trim() }, (geocodeResults, status) => {
+          if (status !== google.maps.GeocoderStatus.OK || !geocodeResults?.length) {
+            reject(new Error("Address not found. Please refine the address or pin on map."));
+            return;
+          }
+
+          resolve(geocodeResults);
+        });
+      });
+
+      const topResult = results[0];
+      const location = topResult.geometry.location;
+
+      setSpotCoordinatesFromMap(spotId, location.lat(), location.lng());
+      updateSpot(spotId, { address: topResult.formatted_address || targetSpot.address });
+    } catch (locationError) {
+      setError(
+        locationError instanceof Error
+          ? locationError.message
+          : "Unable to set location from this address.",
       );
     }
   };
@@ -347,7 +547,7 @@ export function RegistrationForm() {
 
     setSubmitting(true);
     setError("");
-    setSubmitStatus("Uploading images and documents...");
+    setSubmitStatus("Uploading files to Cloudinary...");
     const submitStart = performance.now();
 
     debugLog("Submit started", {
@@ -363,16 +563,16 @@ export function RegistrationForm() {
 
       const [vendorImageUrls, documentUrls, allSpotImageUrls] = await withTimeout(
         Promise.all([
-          uploadFiles(`vendor-profile/${vendorSlug}`, vendorImage),
-          uploadFiles(`vendor-docs/${vendorSlug}`, documents),
+          uploadFilesToCloudinary(`vendor-profile/${vendorSlug}`, vendorImage),
+          uploadFilesToCloudinary(`vendor-docs/${vendorSlug}`, documents),
           Promise.all(
             spotDrafts.map((spot, index) =>
-              uploadFiles(`vendor-spots/${vendorSlug}/${index + 1}`, spot.spotPhotos),
+              uploadFilesToCloudinary(`vendor-spots/${vendorSlug}/${index + 1}`, spot.spotPhotos),
             ),
           ),
         ]),
         120000,
-        "Uploads are taking too long. Please reduce image count and try again.",
+        "Upload is taking too long. Please reduce file size/count and try again.",
       );
 
       debugLog("Upload stage completed", {
@@ -429,7 +629,8 @@ export function RegistrationForm() {
       setStep("vendor");
       setState(INITIAL_STATE);
       setVendorImage(null);
-      setSpotDrafts([createSpotDraft(0)]);
+      setSpotDrafts([createSpotDraft("spot-0")]);
+      setSpotSequence(1);
       setDocuments(null);
     } catch (submitError) {
       console.error("[VendorRegistration] Submit failed", submitError);
@@ -444,65 +645,97 @@ export function RegistrationForm() {
   };
 
   return (
-    <form className="form-grid" onSubmit={handleSubmit}>
+    <form className="form-grid vendor-form" onSubmit={handleSubmit}>
       {step === "vendor" ? (
         <Card title="Step 1: Vendor Details" subtitle="Basic profile before adding parking spaces.">
-          <div className="form-grid">
-            <input
-              className="input"
-              placeholder="Vendor / Business Name"
-              value={state.vendorName}
-              onChange={(event) => setState((current) => ({ ...current, vendorName: event.target.value }))}
-            />
-            <input
-              className="input"
-              type="email"
-              placeholder="Email"
-              value={state.email}
-              onChange={(event) => setState((current) => ({ ...current, email: event.target.value }))}
-            />
-            <input
-              className="input"
-              placeholder="Phone Number"
-              value={state.phone}
-              onChange={(event) => setState((current) => ({ ...current, phone: event.target.value }))}
-            />
-            <input
-              className="input"
-              type="number"
-              step={0.01}
-              min={0.05}
-              max={0.5}
-              placeholder="Platform fee rate"
-              value={state.platformFeeRate}
-              onChange={(event) =>
-                setState((current) => ({ ...current, platformFeeRate: event.target.value }))
-              }
-            />
+          <div className="form-grid vendor-form-panel">
+            <div className="vendor-form-grid-2">
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Vendor or Business Name</span>
+                <input
+                  className="input"
+                  name="vendor_name"
+                  placeholder="Ex: Central Mall Parking"
+                  value={state.vendorName}
+                  onChange={(event) => setState((current) => ({ ...current, vendorName: event.target.value }))}
+                />
+              </label>
 
-            <label>
-              <span className="card-subtitle">Vendor photo</span>
-              <input
-                className="input"
-                type="file"
-                accept="image/*"
-                onChange={(event) => setVendorImage(event.target.files)}
-              />
-            </label>
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Business Email</span>
+                <input
+                  className="input"
+                  type="email"
+                  name="vendor_email"
+                  placeholder="Ex: parking@business.com"
+                  value={state.email}
+                  onChange={(event) => setState((current) => ({ ...current, email: event.target.value }))}
+                />
+              </label>
 
-            <label>
-              <span className="card-subtitle">Verification documents</span>
-              <input
-                className="input"
-                type="file"
-                multiple
-                accept="image/*,.pdf"
-                onChange={(event) => setDocuments(event.target.files)}
-              />
-            </label>
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Phone Number</span>
+                <input
+                  className="input"
+                  name="vendor_phone"
+                  placeholder="Ex: +91 98765 43210"
+                  value={state.phone}
+                  onChange={(event) => setState((current) => ({ ...current, phone: event.target.value }))}
+                />
+              </label>
+
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Platform Fee Rate</span>
+                <input
+                  className="input"
+                  type="number"
+                  step={0.01}
+                  min={0.05}
+                  max={0.5}
+                  name="platform_fee_rate"
+                  placeholder="Ex: 0.15"
+                  value={state.platformFeeRate}
+                  onChange={(event) =>
+                    setState((current) => ({ ...current, platformFeeRate: event.target.value }))
+                  }
+                />
+                <span className="vendor-form-helper">Enter decimal format. Example: 0.15 = 15%.</span>
+              </label>
+            </div>
+
+            <div className="vendor-upload-block">
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Vendor Profile Photo</span>
+                <input
+                  className="input"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setVendorImage(event.target.files)}
+                />
+                <span className="vendor-form-helper">Upload one clear photo for profile verification.</span>
+              </label>
+              <FilePreviewGrid files={vendorImage} emptyText="No profile image selected yet." />
+            </div>
+
+            <div className="vendor-upload-block">
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Verification Documents</span>
+                <input
+                  className="input"
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf"
+                  onChange={(event) => setDocuments(event.target.files)}
+                />
+                <span className="vendor-form-helper">
+                  Upload up to {MAX_FILES_PER_GROUP} files (images or PDF).
+                </span>
+              </label>
+              <FilePreviewGrid files={documents} emptyText="No verification documents selected yet." />
+            </div>
           </div>
 
-          <div className="hero-actions" style={{ marginTop: "1rem" }}>
+          <div className="hero-actions vendor-step-actions">
             <Button type="button" disabled={!canContinueToSpots} onClick={() => setStep("spots")}>
               Continue to Spot Details
             </Button>
@@ -516,129 +749,236 @@ export function RegistrationForm() {
           subtitle="One vendor can register multiple parking spots in one submission."
         >
           <div className="form-grid">
-            {spotDrafts.map((spot, index) => (
-              <Card
-                key={spot.id}
-                title={`Spot ${index + 1}`}
-                subtitle="Image, size, location, amenities, and price"
-              >
-                <div className="form-grid">
-                  <input
-                    className="input"
-                    placeholder="Spot Name"
-                    value={spot.spotName}
-                    onChange={(event) => updateSpot(spot.id, { spotName: event.target.value })}
-                  />
+            {spotDrafts.map((spot, index) => {
+              const selectedCoordinates = getSpotCoordinates(spot);
+              const hasSelectedCoordinates = Boolean(spot.lat.trim()) && Boolean(spot.lng.trim());
 
-                  <label>
-                    <span className="card-subtitle">Space image upload</span>
+              return (
+                <Card
+                  key={spot.id}
+                  title={`Spot ${index + 1}`}
+                  subtitle="Image, size, location, amenities, and price"
+                  className="vendor-spot-card"
+                >
+                <div className="form-grid vendor-form-panel">
+                  <label className="vendor-form-field">
+                    <span className="vendor-form-label">Spot Name</span>
                     <input
                       className="input"
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={(event) => updateSpot(spot.id, { spotPhotos: event.target.files })}
+                      name={`spot_name_${spot.id}`}
+                      placeholder="Ex: Basement B2 Parking"
+                      value={spot.spotName}
+                      onChange={(event) => updateSpot(spot.id, { spotName: event.target.value })}
                     />
                   </label>
 
-                  <input
-                    className="input"
-                    placeholder="Address"
-                    value={spot.address}
-                    onChange={(event) => updateSpot(spot.id, { address: event.target.value })}
-                  />
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
-                    <input
-                      className="input"
-                      placeholder="Latitude"
-                      value={spot.lat}
-                      onChange={(event) => updateSpot(spot.id, { lat: event.target.value })}
-                    />
-                    <input
-                      className="input"
-                      placeholder="Longitude"
-                      value={spot.lng}
-                      onChange={(event) => updateSpot(spot.id, { lng: event.target.value })}
-                    />
+                  <div className="vendor-upload-block">
+                    <label className="vendor-form-field">
+                      <span className="vendor-form-label">Spot Photos</span>
+                      <input
+                        className="input"
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(event) => updateSpot(spot.id, { spotPhotos: event.target.files })}
+                      />
+                      <span className="vendor-form-helper">
+                        Upload up to {MAX_FILES_PER_GROUP} images. These will appear in map cards.
+                      </span>
+                    </label>
+                    <FilePreviewGrid files={spot.spotPhotos} emptyText="No spot photos selected yet." />
                   </div>
 
-                  <Button type="button" variant="secondary" onClick={() => void fillCurrentLocation(spot.id)}>
-                    Use Current Location
-                  </Button>
+                  <label className="vendor-form-field">
+                    <span className="vendor-form-label">Full Address</span>
+                    <input
+                      className="input"
+                      name={`spot_address_${spot.id}`}
+                      placeholder="Ex: Road no. 12, Banjara Hills, Hyderabad"
+                      value={spot.address}
+                      onChange={(event) => updateSpot(spot.id, { address: event.target.value })}
+                    />
+                  </label>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                  <div className="vendor-upload-block">
+                    <div className="vendor-location-header">
+                      <span className="vendor-form-label">Pick Spot Location on Map</span>
+                      <span className="vendor-form-helper">
+                        Use address pinning, current location, or click map to place marker.
+                      </span>
+                    </div>
+
+                    <div className="vendor-location-actions">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => void setSpotCoordinatesFromAddress(spot.id)}
+                        disabled={!spot.address.trim()}
+                      >
+                        Set Pin From Address
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => void fillCurrentLocation(spot.id)}
+                      >
+                        Use Current Location
+                      </Button>
+                    </div>
+
+                    {GOOGLE_MAPS_KEY ? (
+                      locationMapError ? (
+                        <p className="vendor-upload-empty">
+                          Map failed to load. Check `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+                        </p>
+                      ) : isLocationMapReady ? (
+                        <GoogleMap
+                          mapContainerClassName="vendor-location-map"
+                          center={selectedCoordinates}
+                          zoom={15}
+                          onClick={(event) => {
+                            const latLng = event.latLng;
+                            if (!latLng) {
+                              return;
+                            }
+
+                            setSpotCoordinatesFromMap(spot.id, latLng.lat(), latLng.lng());
+                          }}
+                          options={{
+                            streetViewControl: false,
+                            mapTypeControl: false,
+                            fullscreenControl: false,
+                          }}
+                        >
+                          <MarkerF
+                            position={selectedCoordinates}
+                            draggable
+                            onDragEnd={(event) => {
+                              const latLng = event.latLng;
+                              if (!latLng) {
+                                return;
+                              }
+
+                              setSpotCoordinatesFromMap(spot.id, latLng.lat(), latLng.lng());
+                            }}
+                          />
+                        </GoogleMap>
+                      ) : (
+                        <div className="vendor-location-map vendor-location-map-loading">
+                          Loading map...
+                        </div>
+                      )
+                    ) : (
+                      <p className="vendor-upload-empty">
+                        Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in `.env.local` to enable map picker.
+                      </p>
+                    )}
+
+                    <div className="vendor-coordinate-pill-row">
+                      <Badge tone={hasSelectedCoordinates ? "success" : "warning"}>
+                        {hasSelectedCoordinates
+                          ? `Lat: ${spot.lat} | Lng: ${spot.lng}`
+                          : "Location not selected yet"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="vendor-form-grid-2">
+                    <label className="vendor-form-field">
+                      <span className="vendor-form-label">Space Size</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min={1}
+                        name={`spot_size_value_${spot.id}`}
+                        placeholder="Ex: 200"
+                        value={spot.sizeValue}
+                        onChange={(event) => updateSpot(spot.id, { sizeValue: event.target.value })}
+                      />
+                    </label>
+                    <label className="vendor-form-field">
+                      <span className="vendor-form-label">Size Unit</span>
+                      <select
+                        className="select"
+                        name={`spot_size_unit_${spot.id}`}
+                        value={spot.sizeUnit}
+                        onChange={(event) =>
+                          updateSpot(spot.id, {
+                            sizeUnit: event.target.value as SpotDraft["sizeUnit"],
+                          })
+                        }
+                      >
+                        {SIZE_UNIT_OPTIONS.map((unit) => (
+                          <option key={unit} value={unit}>
+                            {unit}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="vendor-form-field">
+                    <span className="vendor-form-label">Spot Type</span>
+                    <select
+                      className="select"
+                      name={`spot_type_${spot.id}`}
+                      value={spot.spotType}
+                      onChange={(event) =>
+                        updateSpot(spot.id, {
+                          spotType: event.target.value as SpotDraft["spotType"],
+                        })
+                      }
+                    >
+                      {SPOT_TYPE_OPTIONS.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="vendor-form-grid-2">
+                    <label className="vendor-form-field">
+                      <span className="vendor-form-label">Flat Rate (Optional)</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min={0}
+                        name={`spot_flat_rate_${spot.id}`}
+                        placeholder="Ex: 50"
+                        value={spot.flatRate}
+                        onChange={(event) => updateSpot(spot.id, { flatRate: event.target.value })}
+                      />
+                    </label>
+                    <label className="vendor-form-field">
+                      <span className="vendor-form-label">Hourly Rate</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min={0}
+                        name={`spot_hourly_rate_${spot.id}`}
+                        placeholder="Ex: 80"
+                        value={spot.hourlyRate}
+                        onChange={(event) => updateSpot(spot.id, { hourlyRate: event.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="vendor-form-field">
+                    <span className="vendor-form-label">Total Parking Slots</span>
                     <input
                       className="input"
                       type="number"
                       min={1}
-                      placeholder="Space size"
-                      value={spot.sizeValue}
-                      onChange={(event) => updateSpot(spot.id, { sizeValue: event.target.value })}
+                      name={`spot_total_slots_${spot.id}`}
+                      placeholder="Ex: 20"
+                      value={spot.totalSpots}
+                      onChange={(event) => updateSpot(spot.id, { totalSpots: event.target.value })}
                     />
-                    <select
-                      className="select"
-                      value={spot.sizeUnit}
-                      onChange={(event) =>
-                        updateSpot(spot.id, {
-                          sizeUnit: event.target.value as SpotDraft["sizeUnit"],
-                        })
-                      }
-                    >
-                      {SIZE_UNIT_OPTIONS.map((unit) => (
-                        <option key={unit} value={unit}>
-                          {unit}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <select
-                    className="select"
-                    value={spot.spotType}
-                    onChange={(event) =>
-                      updateSpot(spot.id, {
-                        spotType: event.target.value as SpotDraft["spotType"],
-                      })
-                    }
-                  >
-                    {SPOT_TYPE_OPTIONS.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
-                    <input
-                      className="input"
-                      type="number"
-                      min={0}
-                      placeholder="Flat price"
-                      value={spot.flatRate}
-                      onChange={(event) => updateSpot(spot.id, { flatRate: event.target.value })}
-                    />
-                    <input
-                      className="input"
-                      type="number"
-                      min={0}
-                      placeholder="Price per hour"
-                      value={spot.hourlyRate}
-                      onChange={(event) => updateSpot(spot.id, { hourlyRate: event.target.value })}
-                    />
-                  </div>
-
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    placeholder="Total parking slots"
-                    value={spot.totalSpots}
-                    onChange={(event) => updateSpot(spot.id, { totalSpots: event.target.value })}
-                  />
+                  </label>
 
                   <div>
-                    <span className="card-subtitle">Amenities</span>
+                    <span className="vendor-form-label">Amenities</span>
                     <div className="hero-actions" style={{ marginTop: "0.4rem" }}>
                       {AMENITY_OPTIONS.map((amenity) => {
                         const active = spot.amenities.includes(amenity);
@@ -656,19 +996,23 @@ export function RegistrationForm() {
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.6rem" }}>
-                    <input
-                      className="input"
-                      placeholder="Other amenity"
-                      value={spot.otherAmenityInput}
-                      onChange={(event) =>
-                        updateSpot(spot.id, {
-                          otherAmenityInput: event.target.value,
-                        })
-                      }
-                    />
+                  <div className="vendor-inline-field">
+                    <label className="vendor-form-field">
+                      <span className="vendor-form-label">Add Custom Amenity</span>
+                      <input
+                        className="input"
+                        name={`spot_other_amenity_${spot.id}`}
+                        placeholder="Ex: Covered Entry"
+                        value={spot.otherAmenityInput}
+                        onChange={(event) =>
+                          updateSpot(spot.id, {
+                            otherAmenityInput: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
                     <Button type="button" variant="secondary" onClick={() => addCustomAmenity(spot.id)}>
-                      Add Other
+                      Add Amenity
                     </Button>
                   </div>
 
@@ -688,7 +1032,7 @@ export function RegistrationForm() {
                   ) : null}
 
                   <div>
-                    <span className="card-subtitle">Vehicle types</span>
+                    <span className="vendor-form-label">Supported Vehicle Types</span>
                     <div className="hero-actions" style={{ marginTop: "0.4rem" }}>
                       {VEHICLE_OPTIONS.map((type) => {
                         const active = spot.vehicleTypes.includes(type);
@@ -717,8 +1061,9 @@ export function RegistrationForm() {
                     </Button>
                   </div>
                 </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
 
             <div className="hero-actions">
               <Button type="button" variant="secondary" onClick={addSpot}>
@@ -726,7 +1071,7 @@ export function RegistrationForm() {
               </Button>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+            <div className="vendor-form-grid-2">
               <Button type="button" variant="ghost" onClick={() => setStep("vendor")}>
                 Back to Vendor Details
               </Button>

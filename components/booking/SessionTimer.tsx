@@ -42,7 +42,7 @@ export function SessionTimer({ expiresAt }: SessionTimerProps) {
 
   return (
     <div className="toggle-row">
-      <span>QR expires in</span>
+      <span>OTP expires in</span>
       <strong style={{ color: timerColor }}>
         {minutes}:{seconds}
       </strong>

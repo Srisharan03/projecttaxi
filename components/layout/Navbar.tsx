@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { useAuthStore } from "@/store/authStore";
 import { logout } from "@/lib/auth";
+import { ReportPublicSpotModal } from "@/components/community/ReportPublicSpotModal";
 
 export function Navbar() {
   const pathname = usePathname();
   const { user, role, clearAuth } = useAuthStore();
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -27,8 +30,9 @@ export function Navbar() {
     if (role === "vendor") {
       return [
         { href: "/vendor/dashboard", label: "Dashboard" },
+        { href: "/vendor/requests", label: "Booking Requests" },
         { href: "/vendor/register", label: "Register Spot" },
-        { href: "/scan", label: "Scan QR" },
+        { href: "/scan", label: "Verify OTP" },
       ];
     }
 
@@ -46,6 +50,8 @@ export function Navbar() {
   };
 
   const navItems = getNavItems();
+  const canReportPublicSpot = Boolean(user) && (role === "user" || role === "vendor");
+  const reporterId = user?.uid || user?.email || "anonymous-user";
 
   return (
     <header className="site-header glass-card">
@@ -64,6 +70,15 @@ export function Navbar() {
               </Link>
             );
           })}
+          {canReportPublicSpot ? (
+            <button
+              onClick={() => setIsReportModalOpen(true)}
+              className="nav-link"
+              style={{ background: "none", border: "none", cursor: "pointer" }}
+            >
+              Report Public Spot
+            </button>
+          ) : null}
           {user && (
             <button onClick={handleLogout} className="nav-link" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-danger)" }}>
               Logout
@@ -73,6 +88,14 @@ export function Navbar() {
 
         <MobileNav items={navItems} />
       </div>
+
+      {canReportPublicSpot ? (
+        <ReportPublicSpotModal
+          open={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          userId={reporterId}
+        />
+      ) : null}
     </header>
   );
 }

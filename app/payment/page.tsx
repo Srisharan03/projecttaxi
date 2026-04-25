@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { PaymentMethodCards } from "@/components/payment/PaymentMethodCards";
 import { ReceiptCard } from "@/components/payment/ReceiptCard";
-import { Badge, Card } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/ui";
 import { getSessionById, markSessionPaid, type Session } from "@/lib/firestore";
 import { formatCurrency } from "@/lib/utils";
 import "@/styles/booking.css";
@@ -14,6 +15,8 @@ type SessionWithId = Session & { id: string };
 function PaymentPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
+  const mode = searchParams.get("mode");
+  const spotId = searchParams.get("spotId");
 
   const [session, setSession] = useState<SessionWithId | null>(null);
   const [method, setMethod] = useState<"upi" | "cash">("upi");
@@ -67,6 +70,9 @@ function PaymentPageContent() {
             <div className="hero-actions">
               <Badge tone="info">Session: {session.id}</Badge>
               <Badge tone="neutral">Amount: {formatCurrency(session.amount || 0)}</Badge>
+              <Badge tone={mode === "entry" ? "warning" : "info"}>
+                {mode === "entry" ? "Entry Payment" : "Exit Payment"}
+              </Badge>
               <Badge tone={session.payment_status === "paid" ? "success" : "warning"}>
                 {session.payment_status}
               </Badge>
@@ -90,7 +96,14 @@ function PaymentPageContent() {
         />
 
         {session && session.payment_status === "paid" ? (
-          <ReceiptCard session={session} />
+          <div className="form-grid">
+            <ReceiptCard session={session} />
+            {spotId ? (
+              <Link href={`/booking?spotId=${spotId}`}>
+                <Button>Back to Booking</Button>
+              </Link>
+            ) : null}
+          </div>
         ) : (
           <Card title="Receipt Pending">
             <p className="card-subtitle">Complete payment to generate receipt and continue.</p>

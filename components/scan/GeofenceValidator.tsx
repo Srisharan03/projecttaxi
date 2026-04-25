@@ -14,7 +14,7 @@ export function GeofenceValidator({
   return (
     <Card title="Geofence Check" subtitle="Validation required before occupancy updates.">
       {distanceMeters === null ? (
-        <p className="card-subtitle">Awaiting scan and location match.</p>
+        <p className="card-subtitle">Awaiting OTP verification and location match.</p>
       ) : (
         <div className="toggle-row">
           <span>Distance to spot</span>

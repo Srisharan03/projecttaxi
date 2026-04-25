@@ -28,11 +28,34 @@ export const useAuthStore = create<AuthStoreState>()(
           return;
         }
 
-        const unsubscribe = subscribeToAuthState((user) => {
-          set({ user, initialized: true });
-        });
+        let settled = false;
+        const initTimeout = window.setTimeout(() => {
+          if (!settled) {
+            console.warn("[AuthStore] Auth state check timed out. Falling back to initialized=true.");
+            set({ initialized: true });
+          }
+        }, 7000);
 
-        set({ unsubscribeAuth: unsubscribe });
+        const unsubscribe = subscribeToAuthState(
+          (user) => {
+            settled = true;
+            window.clearTimeout(initTimeout);
+            set({ user, initialized: true });
+          },
+          (error) => {
+            settled = true;
+            window.clearTimeout(initTimeout);
+            console.error("[AuthStore] Auth state subscription failed", error);
+            set({ user: null, initialized: true });
+          },
+        );
+
+        set({
+          unsubscribeAuth: () => {
+            window.clearTimeout(initTimeout);
+            unsubscribe();
+          },
+        });
       },
 
       setRole: (role) => set({ role }),

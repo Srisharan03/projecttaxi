@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { rankSpots, type RankedSpot } from "@/lib/optimization";
+import type { SpotRouteMetric } from "@/lib/routing";
 import {
   subscribeToSpots,
   type LatLng,
@@ -25,6 +26,7 @@ interface RankedSpotFilters {
 
 interface ParkingStoreState {
   spots: ParkingSpotWithId[];
+  routeMetrics: Record<string, SpotRouteMetric>;
   selectedSpotId: string | null;
   userLocation: LatLng;
   destinationLocation: LatLng;
@@ -35,6 +37,8 @@ interface ParkingStoreState {
   startSpotsSubscription: () => void;
   stopSpotsSubscription: () => void;
   replaceSpots: (spots: ParkingSpotWithId[]) => void;
+  setRouteMetrics: (metrics: Record<string, SpotRouteMetric>) => void;
+  clearRouteMetrics: () => void;
   setSelectedSpotId: (spotId: string | null) => void;
   setUserLocation: (location: LatLng) => void;
   setDestinationLocation: (location: LatLng) => void;
@@ -44,6 +48,7 @@ interface ParkingStoreState {
 
 export const useParkingStore = create<ParkingStoreState>((set, get) => ({
   spots: [],
+  routeMetrics: {},
   selectedSpotId: null,
   userLocation: HYDERABAD_CENTER,
   destinationLocation: HYDERABAD_CENTER,
@@ -69,6 +74,7 @@ export const useParkingStore = create<ParkingStoreState>((set, get) => ({
 
         set({
           spots: uniqueById as ParkingSpotWithId[],
+          routeMetrics: {},
           isLoading: false,
           error: null,
         });
@@ -97,10 +103,14 @@ export const useParkingStore = create<ParkingStoreState>((set, get) => ({
     const uniqueById = Array.from(new Map(spots.map((spot) => [spot.id, spot])).values());
     set({
       spots: uniqueById,
+      routeMetrics: {},
       isLoading: false,
       error: null,
     });
   },
+
+  setRouteMetrics: (routeMetrics) => set({ routeMetrics }),
+  clearRouteMetrics: () => set({ routeMetrics: {} }),
 
   setSelectedSpotId: (selectedSpotId) => set({ selectedSpotId }),
   setUserLocation: (userLocation) => set({ userLocation }),
@@ -114,6 +124,7 @@ export const useParkingStore = create<ParkingStoreState>((set, get) => ({
       state.userLocation,
       state.destinationLocation,
       state.vehicleType,
+      state.routeMetrics,
     );
 
     const searched = ranked.filter((spot) => {

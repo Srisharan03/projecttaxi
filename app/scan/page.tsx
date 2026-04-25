@@ -1,97 +1,106 @@
 "use client";
 
 import { useState } from "react";
-import { GeofenceValidator } from "@/components/scan/GeofenceValidator";
-import { QRScanner } from "@/components/scan/QRScanner";
 import { ScanResultCard } from "@/components/scan/ScanResultCard";
 import { Badge, Button, Card } from "@/components/ui";
 import {
-  calculatePlatformFee,
-  checkIn,
-  checkOut,
+  getSessionByAccessCode,
   getSessionById,
-  getSpotById,
-  getVendorById,
+  processSessionOtpByAccessCode,
   rateSession,
+  type OtpAction,
 } from "@/lib/firestore";
-import { getCurrentPosition, getDistanceMeters, validateLocation } from "@/lib/geofence";
 import "@/styles/scan.css";
 
-interface QrPayload {
-  sessionId: string;
-  spotId: string;
-  action?: "check_in" | "check_out";
+function formatSessionTime(value: unknown): string {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    const dateValue = (value as { toDate: () => Date }).toDate();
+    return dateValue.toLocaleString();
+  }
+
+  if (value instanceof Date) {
+    return value.toLocaleString();
+  }
+
+  return "Not available";
 }
 
 export default function ScanPage() {
-  const [payloadText, setPayloadText] = useState("");
-  const [manualPayload, setManualPayload] = useState("");
+  const [bookingCode, setBookingCode] = useState("");
+  const [otp, setOtp] = useState("");
+  const [action, setAction] = useState<OtpAction>("check_in");
+  const [rating, setRating] = useState(5);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [distanceMeters, setDistanceMeters] = useState<number | null>(null);
-  const [rating, setRating] = useState(5);
+  const [payableAmount, setPayableAmount] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
 
-  const processPayload = async (rawPayload: string) => {
+  const handleVerifyOtp = async () => {
     if (processing) {
+      return;
+    }
+
+    if (!bookingCode.trim()) {
+      setStatus("error");
+      setMessage("Booking code is required.");
       return;
     }
 
     setProcessing(true);
     setStatus("idle");
     setMessage("");
+    setPayableAmount(null);
 
     try {
-      const parsed = JSON.parse(rawPayload) as QrPayload;
-      if (!parsed.sessionId || !parsed.spotId) {
-        throw new Error("Invalid QR payload.");
+      const normalizedCode = bookingCode.trim().toUpperCase();
+      const session = await getSessionByAccessCode(normalizedCode);
+      if (!session) {
+        throw new Error("Booking code not found.");
       }
 
-      const [session, spot] = await Promise.all([
-        getSessionById(parsed.sessionId),
-        getSpotById(parsed.spotId),
-      ]);
+      const result = await processSessionOtpByAccessCode(normalizedCode, action, otp.trim());
+      const latestSession = await getSessionById(session.id);
 
-      if (!session || !spot) {
-        throw new Error("Session or spot not found.");
-      }
-
-      const currentLocation = await getCurrentPosition();
-      const distance = getDistanceMeters(currentLocation, spot.location);
-      setDistanceMeters(distance);
-
-      if (!validateLocation(currentLocation, spot.location, 20)) {
-        throw new Error("You must be within 20m of the parking spot.");
-      }
-
-      const inferredAction =
-        session.status === "checked_in"
-          ? "check_out"
-          : session.status === "checked_out"
-            ? "check_out"
-            : parsed.action || "check_in";
-
-      if (inferredAction === "check_in") {
-        await checkIn(parsed.sessionId, parsed.spotId, currentLocation);
+      if (result.action === "check_in") {
         setStatus("success");
-        setMessage("Checked in successfully. Occupancy updated in real-time.");
+        const startTimeText = latestSession?.check_in_time
+          ? formatSessionTime(latestSession.check_in_time)
+          : "Not available";
+        setMessage(
+          `OTP verified. Booking started at ${startTimeText}. Current amount: Rs ${Math.round(latestSession?.amount || result.finalAmount)}.`,
+        );
       } else {
-        const vendor = await getVendorById(spot.vendor_id);
-        const platformFee = calculatePlatformFee(session.amount || 0, vendor?.platform_fee_rate ?? 0.15);
-
-        await checkOut(parsed.sessionId, parsed.spotId, session.amount || 0, platformFee);
         if (rating > 0) {
-          await rateSession(parsed.sessionId, rating);
+          await rateSession(session.id, rating);
         }
 
+        const endTimeText = latestSession?.check_out_time
+          ? formatSessionTime(latestSession.check_out_time)
+          : "Not available";
+        const finalAmount = Math.round(latestSession?.amount || result.finalAmount);
+        const extraAmount = Math.round(latestSession?.extra_amount || result.extraAmount);
+        const overtime = latestSession?.overtime_minutes ?? result.overtimeMinutes;
+        setPayableAmount(finalAmount);
+
         setStatus("success");
-        setMessage(
-          `Checked out successfully. Platform fee: Rs ${platformFee.toFixed(0)}. Thanks for rating!`,
-        );
+        if (extraAmount > 0) {
+          setMessage(
+            `OTP verified. Booking ended at ${endTimeText}. Extra charge: Rs ${extraAmount} for ${overtime} overtime mins. Final amount: Rs ${finalAmount}.`,
+          );
+        } else {
+          setMessage(
+            `OTP verified. Booking ended at ${endTimeText}. Final amount: Rs ${finalAmount}.`,
+          );
+        }
       }
-    } catch (scanError) {
+    } catch (otpError) {
       setStatus("error");
-      setMessage(scanError instanceof Error ? scanError.message : "Scan flow failed.");
+      setMessage(otpError instanceof Error ? otpError.message : "OTP verification failed.");
     } finally {
       setProcessing(false);
     }
@@ -100,33 +109,49 @@ export default function ScanPage() {
   return (
     <div className="scan-page shell">
       <section className="section">
-        <Card title="QR Scan" subtitle="Geofence-protected check-in and check-out.">
+        <Card title="OTP Verification" subtitle="Verify 6-digit entry and exit OTP using booking code.">
           <div className="hero-actions">
-            <Badge tone="info">Radius lock: 20m</Badge>
-            <Badge tone="warning">Occupancy updates on successful scan</Badge>
+            <Badge tone="info">No Spot ID needed</Badge>
+            <Badge tone="success">No user geolocation needed</Badge>
           </div>
         </Card>
       </section>
 
       <section className="scan-grid">
-        <Card title="Camera Scanner">
-          <QRScanner
-            onScan={(decoded) => {
-              setPayloadText(decoded);
-              void processPayload(decoded);
-            }}
-          />
-        </Card>
-
-        <Card title="Manual Payload" subtitle="Use for testing without camera scan.">
+        <Card title="Vendor OTP Console" subtitle="Enter booking code and OTP to process entry or exit.">
           <div className="form-grid">
-            <textarea
-              className="textarea"
-              rows={6}
-              placeholder='{"sessionId":"...","spotId":"...","action":"check_in"}'
-              value={manualPayload}
-              onChange={(event) => setManualPayload(event.target.value)}
-            />
+            <label>
+              <span className="card-subtitle">Booking Code</span>
+              <input
+                className="input"
+                value={bookingCode}
+                onChange={(event) => setBookingCode(event.target.value.toUpperCase().slice(0, 6))}
+                placeholder="ABC123"
+              />
+            </label>
+
+            <label>
+              <span className="card-subtitle">Action</span>
+              <select
+                className="select"
+                value={action}
+                onChange={(event) => setAction(event.target.value as OtpAction)}
+              >
+                <option value="check_in">Entry (Check-in)</option>
+                <option value="check_out">Exit (Check-out)</option>
+              </select>
+            </label>
+
+            <label>
+              <span className="card-subtitle">6-digit OTP</span>
+              <input
+                className="input"
+                value={otp}
+                onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="123456"
+              />
+            </label>
+
             <label>
               <span className="card-subtitle">Rating after checkout</span>
               <input
@@ -138,19 +163,23 @@ export default function ScanPage() {
                 onChange={(event) => setRating(Number(event.target.value) || 5)}
               />
             </label>
-            <Button onClick={() => void processPayload(manualPayload)} isLoading={processing}>
-              Process Payload
+
+            <Button onClick={() => void handleVerifyOtp()} isLoading={processing}>
+              Verify OTP
             </Button>
           </div>
         </Card>
 
         <ScanResultCard status={status} message={message} />
 
-        <GeofenceValidator distanceMeters={distanceMeters} />
-
-        <Card title="Last Payload">
-          <p className="card-subtitle">{payloadText || "No scans yet."}</p>
-        </Card>
+        {payableAmount !== null ? (
+          <Card title="Amount Payable" subtitle="Show this final amount to user and vendor.">
+            <div className="toggle-row">
+              <span>Final Payable</span>
+              <strong>Rs {payableAmount}</strong>
+            </div>
+          </Card>
+        ) : null}
       </section>
     </div>
   );

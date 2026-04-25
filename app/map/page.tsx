@@ -1,17 +1,29 @@
 "use client";
 
-import { useJsApiLoader } from "@react-google-maps/api";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge, Button, Card } from "@/components/ui";
 import { FilterPanel } from "@/components/map/FilterPanel";
+import { useGoogleMapsLoader } from "@/components/providers/GoogleMapsProvider";
 import { SearchBar } from "@/components/map/SearchBar";
 import { SpotList } from "@/components/map/SpotList";
-import { getSpots } from "@/lib/firestore";
+import { PublicSpotAuditModal } from "@/components/map/PublicSpotAuditModal";
+import {
+  addCommunitySpotAudit,
+  getCommunitySpotAuditHistory,
+  getPublicSpotAuditHistory,
+  getSpots,
+  subscribeToCommunitySpots,
+  type CommunitySpotAudit,
+  type CommunitySpotCluster,
+  type PublicSpotAudit,
+} from "@/lib/firestore";
 import { getCurrentPosition } from "@/lib/geofence";
 import { fetchNearbyPublicParkingSpots, geocodeDestination } from "@/lib/googlePlaces";
 import { haversine } from "@/lib/optimization";
-import { getGoogleMapsDirectionsUrl } from "@/lib/routing";
+import { getGoogleMapsDirectionsUrl, getRouteMetricsForSpots } from "@/lib/routing";
+import { useAuthStore } from "@/store/authStore";
 import { useFilterStore } from "@/store/filterStore";
 import { useParkingStore } from "@/store/parkingStore";
 import "@/styles/map.css";
@@ -25,19 +37,19 @@ const DynamicParkingMap = dynamic(
 );
 
 export default function MapPage() {
+  const router = useRouter();
+  const user = useAuthStore((state) => state.user);
   const SEARCH_RADIUS_KM = 5;
   const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-  const { isLoaded: isGoogleLoaded, loadError } = useJsApiLoader({
-    id: "parksaathi-google-maps",
-    googleMapsApiKey,
-    libraries: ["places"],
-  });
+  const { isLoaded: isGoogleLoaded, loadError } = useGoogleMapsLoader();
 
   const selectedSpotId = useParkingStore((state) => state.selectedSpotId);
+  const storeSpots = useParkingStore((state) => state.spots);
   const userLocation = useParkingStore((state) => state.userLocation);
   const destinationLocation = useParkingStore((state) => state.destinationLocation);
   const vehicleType = useParkingStore((state) => state.vehicleType);
   const replaceSpots = useParkingStore((state) => state.replaceSpots);
+  const setRouteMetrics = useParkingStore((state) => state.setRouteMetrics);
   const setSelectedSpotId = useParkingStore((state) => state.setSelectedSpotId);
   const setUserLocation = useParkingStore((state) => state.setUserLocation);
   const setDestinationLocation = useParkingStore((state) => state.setDestinationLocation);
@@ -60,6 +72,14 @@ export default function MapPage() {
     "Enter a destination and load public parking nearby.",
   );
   const [fallbackMapsLink, setFallbackMapsLink] = useState<string>("");
+  const [communitySpots, setCommunitySpots] = useState<Array<CommunitySpotCluster & { id: string }>>([]);
+  const [auditingClusterId, setAuditingClusterId] = useState<string | null>(null);
+  const [auditTargetClusterId, setAuditTargetClusterId] = useState<string | null>(null);
+  const [auditSpotId, setAuditSpotId] = useState<string | null>(null);
+  const [publicAuditHistory, setPublicAuditHistory] = useState<Array<PublicSpotAudit & { id: string }>>([]);
+  const [publicAuditLoading, setPublicAuditLoading] = useState(false);
+  const [publicAuditError, setPublicAuditError] = useState("");
+  const [isRefreshingRoutes, setIsRefreshingRoutes] = useState(false);
 
   const rankedSpots = getRankedSpots({
     search: "",
@@ -72,6 +92,9 @@ export default function MapPage() {
   const selectedSpot = useMemo(() => {
     return rankedSpots.find((spot) => spot.id === selectedSpotId) ?? null;
   }, [rankedSpots, selectedSpotId]);
+  const selectedAuditSpot = useMemo(() => {
+    return rankedSpots.find((spot) => spot.id === auditSpotId) ?? null;
+  }, [rankedSpots, auditSpotId]);
 
   const totalCapacity = rankedSpots.reduce((acc, spot) => acc + spot.total_spots, 0);
   const totalOccupied = rankedSpots.reduce((acc, spot) => acc + spot.current_occupancy, 0);
@@ -85,6 +108,43 @@ export default function MapPage() {
         // Keep fallback location when user does not grant GPS permission.
       });
   }, [setUserLocation]);
+
+  const refreshRouteEfficiency = async (
+    spotsToEvaluate: Array<{ id: string; location: { lat: number; lng: number } }>,
+    nextVehicleType: typeof vehicleType,
+    origin = userLocation,
+  ) => {
+    if (!spotsToEvaluate.length || !isGoogleLoaded) {
+      setRouteMetrics({});
+      return;
+    }
+
+    setIsRefreshingRoutes(true);
+    try {
+      const metrics = await getRouteMetricsForSpots(
+        origin,
+        spotsToEvaluate.map((spot) => ({ id: spot.id, location: spot.location })),
+        nextVehicleType,
+      );
+      setRouteMetrics(metrics);
+    } catch {
+      setRouteMetrics({});
+    } finally {
+      setIsRefreshingRoutes(false);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = subscribeToCommunitySpots(
+      (rows) => setCommunitySpots(rows.filter((row) => row.is_verified)),
+      () => {
+        // Keep map usable if subscription fails.
+      },
+      { verifiedOnly: true },
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   const handleDestinationSearch = async () => {
     if (!isGoogleLoaded) {
@@ -106,17 +166,24 @@ export default function MapPage() {
         getSpots(),
       ]);
 
-      const nearbyVendorSpots = firestoreSpots.filter((spot) => {
-        if (!spot.is_approved) {
-          return false;
-        }
+      const nearbyVendorSpots = firestoreSpots
+        .filter((spot) => {
+          if (spot.is_approved !== true) {
+            return false;
+          }
 
-        if (spot.status !== "open") {
-          return false;
-        }
+          if (spot.status !== "open") {
+            return false;
+          }
 
-        return haversine(destination.location, spot.location) <= SEARCH_RADIUS_KM;
-      });
+          return haversine(destination.location, spot.location) <= SEARCH_RADIUS_KM;
+        })
+        .map((spot) => {
+          return {
+            ...spot,
+            images: Array.isArray(spot.images) ? spot.images : [],
+          };
+        });
 
       const mergedNearbySpots = Array.from(
         new Map(
@@ -124,13 +191,22 @@ export default function MapPage() {
         ).values(),
       );
 
+      const mergedVendorCount = mergedNearbySpots.filter((spot) => spot.vendor_id !== "google-public").length;
+      const mergedPublicCount = mergedNearbySpots.length - mergedVendorCount;
+
       replaceSpots(mergedNearbySpots);
       setSelectedSpotId(null);
+      await refreshRouteEfficiency(mergedNearbySpots, vehicleType, userLocation);
+
+      if (!mergedNearbySpots.length) {
+        setDestinationStatus(
+          `No parking spots found near ${destination.formattedAddress}. Try a wider destination query.`,
+        );
+        return;
+      }
 
       setDestinationStatus(
-        mergedNearbySpots.length
-          ? `Found ${mergedNearbySpots.length} nearby parking spots near ${destination.formattedAddress}.`
-          : `No public parking spots found near ${destination.formattedAddress}. Try a wider destination query. Ranking prioritizes destination-near spots with shorter travel from your current location.`,
+        `Found ${mergedNearbySpots.length} nearby spots (${mergedVendorCount} approved vendor + ${mergedPublicCount} public) near ${destination.formattedAddress}.`,
       );
     } catch (searchError) {
       setDestinationStatus(
@@ -144,11 +220,93 @@ export default function MapPage() {
   };
 
   const handleRouteSpot = (spot: (typeof rankedSpots)[number]) => {
-    const link = getGoogleMapsDirectionsUrl(userLocation, spot.location);
+    const link = getGoogleMapsDirectionsUrl(userLocation, spot.location, vehicleType);
     setFallbackMapsLink(link);
 
     if (typeof window !== "undefined") {
       window.open(link, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const handleVehicleTypeChange = async (nextType: typeof vehicleType) => {
+    if (vehicleType === nextType) {
+      return;
+    }
+
+    setVehicleType(nextType);
+    if (storeSpots.length) {
+      await refreshRouteEfficiency(storeSpots, nextType, userLocation);
+    }
+  };
+
+  const handleBookSpot = (spot: (typeof rankedSpots)[number]) => {
+    if (spot.vendor_id === "google-public") {
+      handleRouteSpot(spot);
+      return;
+    }
+
+    router.push(`/booking?spotId=${spot.id}`);
+  };
+
+  const handleAuditCommunitySpot = async (
+    clusterId: string,
+    status: "space_left" | "full",
+    message?: string,
+  ) => {
+    const reporterId = user?.uid || user?.email || "demo-user";
+    if (!reporterId) {
+      setDestinationStatus("Login required to submit community audit.");
+      return;
+    }
+
+    setAuditingClusterId(clusterId);
+    try {
+      const currentLocation = await getCurrentPosition();
+      await addCommunitySpotAudit(clusterId, reporterId, status, message, currentLocation);
+      setDestinationStatus(
+        status === "space_left"
+          ? "Community update submitted: space available."
+          : "Community update submitted: spot likely full.",
+      );
+    } catch (auditError) {
+      setDestinationStatus(
+        auditError instanceof Error
+          ? auditError.message
+          : "Unable to submit community spot audit.",
+      );
+    } finally {
+      setAuditingClusterId(null);
+    }
+  };
+
+  const handleLoadCommunityAuditHistory = async (
+    clusterId: string,
+  ): Promise<Array<CommunitySpotAudit & { id: string }>> => {
+    return getCommunitySpotAuditHistory(clusterId, 40);
+  };
+
+  const loadPublicAuditHistory = async (spotId: string): Promise<void> => {
+    setPublicAuditLoading(true);
+    setPublicAuditError("");
+    try {
+      const rows = await getPublicSpotAuditHistory(spotId, 40);
+      setPublicAuditHistory(rows);
+    } catch (historyError) {
+      const message = historyError instanceof Error ? historyError.message : "";
+      const isIndexError =
+        message.toLowerCase().includes("query requires an index") ||
+        message.toLowerCase().includes("firestore/indexes");
+      if (isIndexError) {
+        setPublicAuditError("Audit history is temporarily unavailable. Please try again shortly.");
+      } else {
+        setPublicAuditError("Unable to load public spot audit history right now.");
+        if (historyError instanceof Error) {
+          console.error("[PublicAudit] Failed to load history", historyError);
+        }
+      }
+      setPublicAuditHistory([]);
+    } finally {
+      setPublicAuditLoading(false);
     }
   };
 
@@ -186,22 +344,25 @@ export default function MapPage() {
             <Badge tone="info">Vehicle profile</Badge>
             <Button
               variant={vehicleType === "bike" ? "primary" : "secondary"}
-              onClick={() => setVehicleType("bike")}
+              onClick={() => void handleVehicleTypeChange("bike")}
             >
               Bike
             </Button>
             <Button
               variant={vehicleType === "car" ? "primary" : "secondary"}
-              onClick={() => setVehicleType("car")}
+              onClick={() => void handleVehicleTypeChange("car")}
             >
               Car
             </Button>
             <Button
               variant={vehicleType === "suv" ? "primary" : "secondary"}
-              onClick={() => setVehicleType("suv")}
+              onClick={() => void handleVehicleTypeChange("suv")}
             >
               SUV
             </Button>
+            <Badge tone={isRefreshingRoutes ? "warning" : "neutral"}>
+              {isRefreshingRoutes ? "Refreshing route efficiency..." : "Route efficiency active"}
+            </Badge>
             <Badge tone="success">Visible Occupancy: {totalOccupied}/{totalCapacity || 0}</Badge>
           </div>
 
@@ -210,7 +371,7 @@ export default function MapPage() {
           </p>
 
           <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
-            Ranking order: closest to destination, then shorter distance from your current location.
+            Ranking order: route efficiency first, then destination distance, price, and reliability.
           </p>
 
           {fallbackMapsLink ? (
@@ -243,10 +404,17 @@ export default function MapPage() {
             spots={rankedSpots}
             selectedSpotId={selectedSpotId}
             onSelectSpot={(spot) => setSelectedSpotId(spot.id)}
-            onBookSpot={handleRouteSpot}
+            onBookSpot={handleBookSpot}
             onRouteSpot={handleRouteSpot}
-            onReportSpot={() => {
-              // Vendor audit is intentionally skipped for public Google Places spots.
+            onReportSpot={(spot) => {
+              if (spot.vendor_id === "google-public") {
+                setSelectedSpotId(spot.id);
+                setAuditSpotId(spot.id);
+                setDestinationStatus("Public spot audit opened.");
+                void loadPublicAuditHistory(spot.id);
+                return;
+              }
+              setDestinationStatus("This audit button is for public spots only.");
             }}
           />
         </aside>
@@ -255,15 +423,45 @@ export default function MapPage() {
           {isGoogleLoaded ? (
             <DynamicParkingMap
               spots={rankedSpots}
+              communitySpots={communitySpots}
               destination={destinationLocation}
               selectedSpotId={selectedSpot?.id ?? null}
               onSelectSpot={setSelectedSpotId}
+              selectedRoutePath={selectedSpot?.routePath || []}
+              selectedRouteLabel={selectedSpot?.routeLabel}
+              selectedRouteEtaMinutes={selectedSpot?.routeEtaMinutes}
+              auditTargetClusterId={auditTargetClusterId}
+              onClearAuditTarget={() => setAuditTargetClusterId(null)}
+              onAuditCommunitySpot={handleAuditCommunitySpot}
+              onLoadCommunityAuditHistory={handleLoadCommunityAuditHistory}
+              auditingClusterId={auditingClusterId}
             />
           ) : (
             <div className="map-shell glass-card" />
           )}
         </div>
       </section>
+
+      <PublicSpotAuditModal
+        key={auditSpotId ?? "no-public-audit"}
+        open={Boolean(auditSpotId)}
+        onClose={() => {
+          setAuditSpotId(null);
+          setPublicAuditHistory([]);
+          setPublicAuditError("");
+        }}
+        spot={selectedAuditSpot}
+        reporterId={user?.uid || user?.email || "demo-user"}
+        history={publicAuditHistory}
+        isHistoryLoading={publicAuditLoading}
+        historyError={publicAuditError}
+        onRefreshHistory={async () => {
+          if (!selectedAuditSpot) {
+            return;
+          }
+          await loadPublicAuditHistory(selectedAuditSpot.id);
+        }}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { JetBrains_Mono, Outfit } from "next/font/google";
 import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
+import { GoogleMapsProvider } from "@/components/providers/GoogleMapsProvider";
 import { useAuthStore } from "@/store/authStore";
 import "@/styles/globals.css";
 
@@ -31,11 +32,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
       <body>
-        <div className="site-root">
-          <Navbar />
-          <main>{children}</main>
-          <Footer />
-        </div>
+        <GoogleMapsProvider>
+          <div className="site-root">
+            <Navbar />
+            <main>{children}</main>
+            <Footer />
+          </div>
+        </GoogleMapsProvider>
       </body>
     </html>
   );

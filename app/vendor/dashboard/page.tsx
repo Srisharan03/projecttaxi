@@ -1,34 +1,106 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import Image from "next/image";
 import Link from "next/link";
-import { Card, Badge, Button } from "@/components/ui";
-import { SpotManager } from "@/components/vendor/SpotManager";
+import { Badge, Button, Card } from "@/components/ui";
 import { useAuthStore } from "@/store/authStore";
 import {
-  getSpotSessions,
+  subscribeToSessions,
   subscribeToSpots,
   subscribeToVendors,
   toggleSpotStatus,
+  updateVendorSpot,
   type ParkingSpot,
   type Session,
   type Vendor,
 } from "@/lib/firestore";
-import { formatCurrency } from "@/lib/utils";
 import "@/styles/vendor.css";
 
 type VendorWithId = Vendor & { id: string };
 type SpotWithId = ParkingSpot & { id: string };
 type SessionWithId = Session & { id: string };
+
+interface SpotEditDraft {
+  name: string;
+  address: string;
+  totalSpots: string;
+  hourlyRate: string;
+  flatRate: string;
+  amenitiesInput: string;
+  images: string[];
+  newImages: FileList | null;
+}
+
+const MAX_FILES_PER_GROUP = 3;
+const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+function parseAmenities(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function toDraft(spot: SpotWithId): SpotEditDraft {
+  return {
+    name: spot.name,
+    address: spot.address,
+    totalSpots: String(spot.total_spots),
+    hourlyRate: String(spot.pricing.hourly_rate),
+    flatRate: String(spot.pricing.flat_rate),
+    amenitiesInput: spot.amenities.join(", "),
+    images: Array.isArray(spot.images) ? spot.images : [],
+    newImages: null,
+  };
+}
+
+async function uploadFilesToCloudinary(folder: string, files: FileList | null): Promise<string[]> {
+  if (!files?.length) {
+    return [];
+  }
+
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error(
+      "Cloudinary is not configured. Add NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET in .env.local.",
+    );
+  }
+
+  if (files.length > MAX_FILES_PER_GROUP) {
+    throw new Error(`You can upload maximum ${MAX_FILES_PER_GROUP} files at a time.`);
+  }
+
+  const uploads = Array.from(files).map(async (file) => {
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("folder", folder);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Image upload failed for ${file.name}. ${errorText}`);
+    }
+
+    const payload = (await response.json()) as { secure_url?: string };
+    if (!payload.secure_url) {
+      throw new Error(`Cloudinary did not return a secure URL for ${file.name}.`);
+    }
+
+    return payload.secure_url;
+  });
+
+  return Promise.all(uploads);
+}
 
 export default function VendorDashboardPage() {
   const user = useAuthStore((state) => state.user);
@@ -36,28 +108,31 @@ export default function VendorDashboardPage() {
   const [spots, setSpots] = useState<SpotWithId[]>([]);
   const [sessions, setSessions] = useState<SessionWithId[]>([]);
   const [vendorId, setVendorId] = useState("");
+  const [editingSpotId, setEditingSpotId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, SpotEditDraft>>({});
+  const [busySpotId, setBusySpotId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    const unsubscribeVendors = subscribeToVendors((rows) => {
-      setVendors(rows);
-    });
-
-    const unsubscribeSpots = subscribeToSpots((rows) => {
-      setSpots(rows);
-    });
+    const unsubscribeVendors = subscribeToVendors((rows) => setVendors(rows));
+    const unsubscribeSpots = subscribeToSpots((rows) => setSpots(rows));
+    const unsubscribeSessions = subscribeToSessions((rows) => setSessions(rows));
 
     return () => {
       unsubscribeVendors();
       unsubscribeSpots();
+      unsubscribeSessions();
     };
   }, []);
 
   const vendorPool = useMemo(() => {
-    if (!user?.email) {
+    const email = user?.email;
+    if (typeof email !== "string" || !email) {
       return vendors;
     }
 
-    return vendors.filter((vendor) => vendor.email.toLowerCase() === user.email.toLowerCase());
+    return vendors.filter((vendor) => vendor.email.toLowerCase() === email.toLowerCase());
   }, [vendors, user]);
 
   const effectiveVendorId = useMemo(() => {
@@ -77,41 +152,139 @@ export default function VendorDashboardPage() {
       return [];
     }
 
-    return spots.filter((spot) => spot.vendor_id === selectedVendor.id && spot.is_approved);
+    return spots
+      .filter((spot) => spot.vendor_id === selectedVendor.id)
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [spots, selectedVendor]);
 
-  useEffect(() => {
-    const loadSessions = async () => {
-      if (!vendorSpots.length) {
-        setSessions([]);
-        return;
+  const totalSpots = vendorSpots.length;
+  const openSpots = vendorSpots.filter((spot) => spot.status === "open").length;
+  const totalCapacity = vendorSpots.reduce((acc, spot) => acc + spot.total_spots, 0);
+  const totalOccupied = vendorSpots.reduce((acc, spot) => acc + spot.current_occupancy, 0);
+  const vendorSpotIds = new Set(vendorSpots.map((spot) => spot.id));
+  const pendingRequestCount = sessions.filter((session) => {
+    if (!vendorSpotIds.has(session.spot_id)) {
+      return false;
+    }
+
+    return (session.approval_status ?? "accepted") === "pending" && session.status === "booked";
+  }).length;
+
+  const startEdit = (spot: SpotWithId) => {
+    setDrafts((current) => ({ ...current, [spot.id]: toDraft(spot) }));
+    setEditingSpotId(spot.id);
+    setStatusMessage("");
+    setErrorMessage("");
+  };
+
+  const cancelEdit = (spotId: string) => {
+    setEditingSpotId((current) => (current === spotId ? null : current));
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[spotId];
+      return next;
+    });
+  };
+
+  const updateDraft = (spotId: string, patch: Partial<SpotEditDraft>) => {
+    setDrafts((current) => {
+      const base = current[spotId];
+      if (!base) {
+        return current;
       }
 
-      const merged = await Promise.all(vendorSpots.map((spot) => getSpotSessions(spot.id!)));
-      setSessions(merged.flat());
-    };
+      return {
+        ...current,
+        [spotId]: { ...base, ...patch },
+      };
+    });
+  };
 
-    void loadSessions();
-  }, [vendorSpots]);
+  const removeDraftImage = (spotId: string, imageUrl: string) => {
+    const draft = drafts[spotId];
+    if (!draft) {
+      return;
+    }
 
-  const grossRevenue = sessions.reduce((acc, session) => acc + (session.amount || 0), 0);
-  const platformFees = sessions.reduce((acc, session) => acc + (session.platform_fee || 0), 0);
-  const netRevenue = Math.max(grossRevenue - platformFees, 0);
+    updateDraft(spotId, { images: draft.images.filter((url) => url !== imageUrl) });
+  };
 
-  const occupancyChartData = vendorSpots.map((spot) => ({
-    name: spot.name,
-    occupied: spot.current_occupancy,
-    total: spot.total_spots,
-  }));
+  const handleToggleAvailability = async (spot: SpotWithId) => {
+    setBusySpotId(spot.id);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      await toggleSpotStatus(spot.id, spot.status === "open" ? "closed" : "open");
+      setStatusMessage(`${spot.name} is now ${spot.status === "open" ? "closed" : "open"}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to change spot availability.");
+    } finally {
+      setBusySpotId(null);
+    }
+  };
+
+  const handleSaveSpot = async (spot: SpotWithId) => {
+    const draft = drafts[spot.id];
+    if (!draft) {
+      return;
+    }
+
+    const amenities = parseAmenities(draft.amenitiesInput);
+    if (!draft.name.trim() || !draft.address.trim()) {
+      setErrorMessage("Spot name and address are required.");
+      return;
+    }
+
+    if (!amenities.length) {
+      setErrorMessage("Add at least one amenity.");
+      return;
+    }
+
+    setBusySpotId(spot.id);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const uploadedImages = await uploadFilesToCloudinary(
+        `vendor-spots-updates/${spot.vendor_id}/${spot.id}`,
+        draft.newImages,
+      );
+
+      const mergedImages = Array.from(new Set([...draft.images, ...uploadedImages]));
+
+      await updateVendorSpot(spot.id, {
+        name: draft.name.trim(),
+        address: draft.address.trim(),
+        amenities,
+        images: mergedImages,
+        total_spots: Number(draft.totalSpots || 0),
+        pricing: {
+          flat_rate: Number(draft.flatRate || 0),
+          hourly_rate: Number(draft.hourlyRate || 0),
+        },
+      });
+
+      setStatusMessage(`${draft.name} updated successfully.`);
+      cancelEdit(spot.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to save spot changes.");
+    } finally {
+      setBusySpotId(null);
+    }
+  };
 
   return (
     <div className="vendor-page shell">
       <section className="section">
-        <Card title="Vendor Dashboard" subtitle="Live operations, occupancy, and payouts.">
+        <Card
+          title="Spot Operations Dashboard"
+          subtitle="Track live occupancy, control availability, and edit your parking spots."
+        >
           <div className="form-grid">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "1rem" }}>
-              <label style={{ flex: 1, minWidth: "250px" }}>
-                <span className="card-subtitle">Select Vendor Profile</span>
+            <div style={{ display: "grid", gap: "0.8rem", gridTemplateColumns: "1fr auto" }}>
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Vendor Profile</span>
                 <select
                   className="select"
                   value={effectiveVendorId}
@@ -125,88 +298,212 @@ export default function VendorDashboardPage() {
                 </select>
               </label>
 
-              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                <Link href="/vendor/register">
-                  <Button variant="secondary" size="lg" style={{ height: "100%", padding: "0 1.5rem", fontSize: "1rem" }}>
-                    Register Parking Spot
+              <div className="hero-actions" style={{ alignSelf: "end" }}>
+                <Link href="/vendor/requests">
+                  <Button variant="secondary">
+                    Booking Requests {pendingRequestCount > 0 ? `(${pendingRequestCount})` : ""}
                   </Button>
                 </Link>
-
-                <Link href="/scan">
-                  <Button size="lg" style={{ height: "100%", padding: "0 2rem", fontSize: "1.1rem" }}>
-                    📷 Scan QR Code
-                  </Button>
+                <Link href="/vendor/register">
+                  <Button variant="secondary">Register Parking Spot</Button>
                 </Link>
               </div>
             </div>
 
             {selectedVendor ? (
-              <div className="hero-actions" style={{ marginTop: "1rem" }}>
+              <div className="hero-actions">
                 <Badge tone={selectedVendor.status === "approved" ? "success" : "warning"}>
                   Vendor status: {selectedVendor.status}
                 </Badge>
-                <Badge tone="info">Platform fee: {Math.round(selectedVendor.platform_fee_rate * 100)}%</Badge>
+                <Badge tone="info">Spots: {totalSpots}</Badge>
+                <Badge tone="success">Open now: {openSpots}</Badge>
+                <Badge tone="neutral">Occupancy: {totalOccupied}/{totalCapacity || 0}</Badge>
+                <Badge tone={pendingRequestCount > 0 ? "warning" : "success"}>
+                  Pending Requests: {pendingRequestCount}
+                </Badge>
               </div>
             ) : null}
+
+            {statusMessage ? <p className="card-subtitle" style={{ color: "#0f766e" }}>{statusMessage}</p> : null}
+            {errorMessage ? <p className="card-subtitle" style={{ color: "#b91c1c" }}>{errorMessage}</p> : null}
           </div>
         </Card>
       </section>
 
-      <section className="vendor-grid">
-        <Card title="Revenue Summary" subtitle="Gross, fee, and net split.">
+      <section className="section">
+        {!vendorSpots.length ? (
+          <Card title="No Parking Spots Yet" subtitle="Register a spot to start tracking occupancy and managing availability." />
+        ) : (
           <div className="form-grid">
-            <div className="toggle-row">
-              <span>Gross Revenue</span>
-              <strong>{formatCurrency(grossRevenue)}</strong>
-            </div>
-            <div className="toggle-row">
-              <span>Platform Fees</span>
-              <strong>{formatCurrency(platformFees)}</strong>
-            </div>
-            <div className="toggle-row">
-              <span>Net Revenue</span>
-              <strong>{formatCurrency(netRevenue)}</strong>
-            </div>
-          </div>
-        </Card>
+            {vendorSpots.map((spot) => {
+              const isEditing = editingSpotId === spot.id;
+              const draft = drafts[spot.id];
+              const coverImage = (isEditing ? draft?.images?.[0] : spot.images?.[0]) ?? "";
+              const isBusy = busySpotId === spot.id;
 
-        <Card title="Live Occupancy" subtitle="Real-time from active spot inventory.">
-          <div style={{ width: "100%", height: 260 }}>
-            <ResponsiveContainer>
-              <BarChart data={occupancyChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(145, 158, 191, 0.2)" />
-                <XAxis dataKey="name" stroke="#b7c0d4" />
-                <YAxis stroke="#b7c0d4" />
-                <Tooltip />
-                <Bar dataKey="occupied" fill="#14b8a6" />
-                <Bar dataKey="total" fill="#334155" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+              return (
+                <Card key={spot.id} title={spot.name} subtitle={spot.address} className="vendor-ops-card">
+                  <div className="form-grid">
+                    <div className="vendor-ops-head">
+                      {coverImage ? (
+                        <Image
+                          src={coverImage}
+                          alt={`${spot.name} cover`}
+                          width={240}
+                          height={140}
+                          style={{ width: "180px", height: "110px", objectFit: "cover", borderRadius: "10px" }}
+                          unoptimized
+                        />
+                      ) : (
+                        <div className="vendor-preview-file-tag" style={{ width: "180px", height: "110px" }}>
+                          No Image
+                        </div>
+                      )}
 
-        <Card title="Spot Live Toggle" subtitle="Control user visibility in real-time.">
-          <SpotManager
-            spots={vendorSpots}
-            onToggleStatus={(spotId, currentStatus) =>
-              void toggleSpotStatus(spotId, currentStatus === "open" ? "closed" : "open")
-            }
-          />
-        </Card>
+                      <div className="form-grid" style={{ gap: "0.5rem", flex: 1 }}>
+                        <div className="hero-actions">
+                          <Badge tone={spot.is_approved ? "success" : "warning"}>
+                            {spot.is_approved ? "Approved" : "Pending Approval"}
+                          </Badge>
+                          <Badge tone={spot.status === "open" ? "success" : "neutral"}>
+                            {spot.status === "open" ? "Open" : "Closed"}
+                          </Badge>
+                        </div>
+                        <p className="card-subtitle">
+                          Occupancy: <strong>{spot.current_occupancy}/{spot.total_spots}</strong>
+                        </p>
+                        <div className="hero-actions">
+                          <Button
+                            variant={spot.status === "open" ? "secondary" : "primary"}
+                            onClick={() => void handleToggleAvailability(spot)}
+                            isLoading={isBusy}
+                          >
+                            {spot.status === "open" ? "Set Closed" : "Set Open"}
+                          </Button>
+                          {!isEditing ? (
+                            <Button variant="ghost" onClick={() => startEdit(spot)}>
+                              Edit Spot
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" onClick={() => cancelEdit(spot.id)}>
+                              Cancel Edit
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-        <Card title="Recent Sessions" subtitle="Latest check-ins and check-outs.">
-          <div className="form-grid">
-            {sessions.slice(0, 8).map((session) => (
-              <div key={session.id} className="toggle-row">
-                <span>
-                  {session.vehicle_number} • {session.status}
-                </span>
-                <strong>{formatCurrency(session.amount || 0)}</strong>
-              </div>
-            ))}
-            {!sessions.length ? <p className="card-subtitle">No sessions yet.</p> : null}
+                    {isEditing && draft ? (
+                      <div className="vendor-upload-block">
+                        <div className="vendor-form-grid-2">
+                          <label className="vendor-form-field">
+                            <span className="vendor-form-label">Spot Name</span>
+                            <input
+                              className="input"
+                              value={draft.name}
+                              onChange={(event) => updateDraft(spot.id, { name: event.target.value })}
+                            />
+                          </label>
+                          <label className="vendor-form-field">
+                            <span className="vendor-form-label">Address</span>
+                            <input
+                              className="input"
+                              value={draft.address}
+                              onChange={(event) => updateDraft(spot.id, { address: event.target.value })}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="vendor-form-grid-2">
+                          <label className="vendor-form-field">
+                            <span className="vendor-form-label">Hourly Rate</span>
+                            <input
+                              className="input"
+                              type="number"
+                              min={0}
+                              value={draft.hourlyRate}
+                              onChange={(event) => updateDraft(spot.id, { hourlyRate: event.target.value })}
+                            />
+                          </label>
+                          <label className="vendor-form-field">
+                            <span className="vendor-form-label">Flat Rate</span>
+                            <input
+                              className="input"
+                              type="number"
+                              min={0}
+                              value={draft.flatRate}
+                              onChange={(event) => updateDraft(spot.id, { flatRate: event.target.value })}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="vendor-form-grid-2">
+                          <label className="vendor-form-field">
+                            <span className="vendor-form-label">Total Slots</span>
+                            <input
+                              className="input"
+                              type="number"
+                              min={1}
+                              value={draft.totalSpots}
+                              onChange={(event) => updateDraft(spot.id, { totalSpots: event.target.value })}
+                            />
+                          </label>
+                          <label className="vendor-form-field">
+                            <span className="vendor-form-label">Amenities (comma separated)</span>
+                            <input
+                              className="input"
+                              value={draft.amenitiesInput}
+                              onChange={(event) => updateDraft(spot.id, { amenitiesInput: event.target.value })}
+                              placeholder="CCTV, EV Charging, Security"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="vendor-form-field">
+                          <span className="vendor-form-label">Add New Spot Images</span>
+                          <input
+                            className="input"
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            onChange={(event) => updateDraft(spot.id, { newImages: event.target.files })}
+                          />
+                          <span className="vendor-form-helper">
+                            Upload up to {MAX_FILES_PER_GROUP} files in one update.
+                          </span>
+                        </label>
+
+                        <div className="hero-actions">
+                          {draft.images.map((url) => (
+                            <Button
+                              key={url}
+                              type="button"
+                              variant="ghost"
+                              onClick={() => removeDraftImage(spot.id, url)}
+                            >
+                              Remove Existing Image
+                            </Button>
+                          ))}
+                          {!draft.images.length ? <p className="card-subtitle">No existing images attached.</p> : null}
+                        </div>
+
+                        <div className="hero-actions">
+                          <Button
+                            type="button"
+                            onClick={() => void handleSaveSpot(spot)}
+                            isLoading={isBusy}
+                          >
+                            Save Spot Changes
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
-        </Card>
+        )}
       </section>
     </div>
   );

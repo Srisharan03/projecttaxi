@@ -20,6 +20,9 @@ export function logout(): Promise<void> {
   return signOut(auth);
 }
 
-export function subscribeToAuthState(onChange: (user: User | null) => void): () => void {
-  return onAuthStateChanged(auth, onChange);
+export function subscribeToAuthState(
+  onChange: (user: User | null) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  return onAuthStateChanged(auth, onChange, onError);
 }

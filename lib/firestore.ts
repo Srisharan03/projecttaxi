@@ -1,5 +1,7 @@
 import {
+  deleteDoc,
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -19,11 +21,21 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PUBLIC_PARKING_SPOTS } from "@/lib/publicSpots";
+import { haversine } from "@/lib/optimization";
 
 export type VehicleType = "bike" | "car" | "suv";
 export type SpotStatus = "open" | "closed";
 export type VendorStatus = "pending" | "approved" | "rejected";
 export type SessionStatus = "booked" | "checked_in" | "checked_out" | "cancelled";
+export type BookingApprovalStatus = "pending" | "accepted" | "rejected";
+export type OtpAction = "check_in" | "check_out";
+
+export interface SessionOtp {
+  code: string;
+  expires_at_ms: number;
+  generated_at?: unknown;
+  verified_at?: unknown;
+}
 
 export interface LatLng {
   lat: number;
@@ -75,22 +87,41 @@ export interface Vendor {
 
 export interface Session {
   id?: string;
+  access_code: string;
   user_id: string;
   spot_id: string;
+  vendor_id: string;
   vehicle_number: string;
   vehicle_type: VehicleType;
   check_in_time: unknown | null;
   check_out_time: unknown | null;
   booking_time?: unknown;
+  start_time_iso: string;
+  end_time_iso: string;
+  start_time_ms: number;
+  end_time_ms: number;
   duration_minutes: number;
   amount: number;
   platform_fee: number;
   payment_method: "upi" | "cash";
   payment_status: "pending" | "paid" | "refunded";
+  approval_status: BookingApprovalStatus;
+  entry_otp?: SessionOtp | null;
+  exit_otp?: SessionOtp | null;
+  extra_amount?: number;
+  overtime_minutes?: number;
+  cancellation_reason?: "vendor_rejected" | "slot_expired";
   status: SessionStatus;
   qr_code_data: string;
   check_in_location: LatLng | null;
   rating: number | null;
+}
+
+export interface ProcessSessionOtpResult {
+  action: OtpAction;
+  finalAmount: number;
+  extraAmount: number;
+  overtimeMinutes: number;
 }
 
 export interface Audit {
@@ -152,6 +183,72 @@ function timestampToMillis(value: unknown): number {
   return 0;
 }
 
+export interface CommunitySpotCluster {
+  id?: string;
+  location: LatLng;
+  tag: string;
+  report_count: number;
+  report_user_ids: string[];
+  is_verified: boolean;
+  reliability_score: number;
+  audit_total_count: number;
+  audit_positive_count: number;
+  latest_audit_status?: "space_left" | "full";
+  latest_audit_message?: string;
+  latest_audit_at?: unknown;
+  created_by: string;
+  created_at?: unknown;
+  updated_at?: unknown;
+  verified_at?: unknown;
+}
+
+export interface CommunitySpotAudit {
+  id?: string;
+  cluster_id: string;
+  user_id: string;
+  status: "space_left" | "full";
+  message?: string;
+  location: LatLng;
+  created_at?: unknown;
+}
+
+export interface PublicSpotAudit {
+  id?: string;
+  spot_id: string;
+  spot_name: string;
+  spot_address: string;
+  user_id: string;
+  status: "space_left" | "full";
+  message?: string;
+  location: LatLng;
+  created_at?: unknown;
+}
+
+export interface ReportCommunitySpotPayload {
+  user_id: string;
+  location: LatLng;
+  tag?: string;
+}
+
+function calculateCommunityReliabilityScore(
+  reportCount: number,
+  auditPositiveCount: number,
+  auditTotalCount: number,
+): number {
+  const reportSignal = Math.min(reportCount / 7, 1) * 70;
+  const auditSignal = auditTotalCount > 0 ? (auditPositiveCount / auditTotalCount) * 30 : 0;
+  return Math.round(reportSignal + auditSignal);
+}
+
+function intervalsOverlap(
+  leftStartMs: number,
+  leftEndMs: number,
+  rightStartMs: number,
+  rightEndMs: number,
+): boolean {
+  return leftStartMs < rightEndMs && rightStartMs < leftEndMs;
+}
+
 export async function addSpot(
   payload: Omit<ParkingSpot, "created_at" | "updated_at" | "id">,
 ): Promise<string> {
@@ -192,6 +289,32 @@ export async function toggleSpotStatus(spotId: string, status: SpotStatus): Prom
   });
 }
 
+export interface VendorSpotUpdatePayload {
+  name?: string;
+  address?: string;
+  amenities?: string[];
+  images?: string[];
+  total_spots?: number;
+  pricing?: {
+    flat_rate: number;
+    hourly_rate: number;
+  };
+}
+
+export async function updateVendorSpot(
+  spotId: string,
+  payload: VendorSpotUpdatePayload,
+): Promise<void> {
+  const sanitizedPayload = Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  ) as VendorSpotUpdatePayload;
+
+  await updateDoc(doc(db, "parking_spots", spotId), {
+    ...sanitizedPayload,
+    updated_at: serverTimestamp(),
+  });
+}
+
 export async function registerVendor(
   payload: VendorRegistrationPayload,
 ): Promise<{ vendorId: string; spotIds: string[] }> {
@@ -227,8 +350,15 @@ export async function registerVendor(
 
     const spotIds = await Promise.all(
       payload.spots.map(async (spot, index) => {
+        const { size_sqft, size_yards, ...spotBase } = spot;
+        const normalizedSpot = {
+          ...spotBase,
+          ...(typeof size_sqft === "number" ? { size_sqft } : {}),
+          ...(typeof size_yards === "number" ? { size_yards } : {}),
+        };
+
         const spotRef = await addDoc(collection(db, "parking_spots"), {
-          ...spot,
+          ...normalizedSpot,
           vendor_id: vendorRef.id,
           current_occupancy: 0,
           status: "open",
@@ -308,14 +438,100 @@ export async function rejectVendor(vendorId: string): Promise<void> {
   });
 }
 
-export async function createSession(
-  payload: Omit<Session, "id" | "booking_time" | "check_in_time" | "check_out_time">,
-): Promise<string> {
+export interface CreateSessionPayload {
+  user_id: string;
+  spot_id: string;
+  vehicle_number: string;
+  vehicle_type: VehicleType;
+  start_time_iso: string;
+  end_time_iso: string;
+  start_time_ms: number;
+  end_time_ms: number;
+  duration_minutes: number;
+  amount: number;
+  payment_method: "upi" | "cash";
+  payment_status: "pending" | "paid" | "refunded";
+  qr_code_data: string;
+}
+
+function generateBookingAccessCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let value = "";
+  for (let index = 0; index < 6; index += 1) {
+    const randomIndex = Math.floor(Math.random() * alphabet.length);
+    value += alphabet[randomIndex];
+  }
+  return value;
+}
+
+async function generateUniqueBookingAccessCode(): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = generateBookingAccessCode();
+    const existing = await getDocs(
+      query(collection(db, "sessions"), where("access_code", "==", candidate), limit(1)),
+    );
+    if (existing.empty) {
+      return candidate;
+    }
+  }
+
+  throw new Error("Unable to generate booking code right now. Please try again.");
+}
+
+export async function createSession(payload: CreateSessionPayload): Promise<string> {
+  if (payload.end_time_ms <= payload.start_time_ms) {
+    throw new Error("End time must be after start time.");
+  }
+
+  const spotSnapshot = await getDoc(doc(db, "parking_spots", payload.spot_id));
+  if (!spotSnapshot.exists()) {
+    throw new Error("Selected parking spot was not found.");
+  }
+
+  const spot = spotSnapshot.data() as ParkingSpot;
+  if (spot.status !== "open") {
+    throw new Error("Selected parking spot is currently closed.");
+  }
+
+  const sessionsQuery = query(
+    collection(db, "sessions"),
+    where("spot_id", "==", payload.spot_id),
+    where("status", "in", ["booked", "checked_in"]),
+  );
+  const activeSessionsSnap = await getDocs(sessionsQuery);
+
+  const overlaps = activeSessionsSnap.docs.filter((sessionDoc) => {
+    const session = sessionDoc.data() as Session;
+    if (session.approval_status === "rejected") {
+      return false;
+    }
+
+    return intervalsOverlap(
+      payload.start_time_ms,
+      payload.end_time_ms,
+      session.start_time_ms,
+      session.end_time_ms,
+    );
+  });
+
+  if (overlaps.length >= Math.max(spot.total_spots, 1)) {
+    throw new Error("That time slot is not available. Please choose a different time.");
+  }
+
+  const accessCode = await generateUniqueBookingAccessCode();
+
   const sessionRef = await addDoc(collection(db, "sessions"), {
     ...payload,
+    access_code: accessCode,
+    vendor_id: spot.vendor_id,
+    approval_status: "pending",
+    platform_fee: 0,
+    status: "booked",
     booking_time: serverTimestamp(),
     check_in_time: null,
     check_out_time: null,
+    check_in_location: null,
+    rating: null,
   });
 
   return sessionRef.id;
@@ -329,6 +545,22 @@ export async function checkIn(
   await runTransaction(db, async (transaction) => {
     const sessionRef = doc(db, "sessions", sessionId);
     const spotRef = doc(db, "parking_spots", spotId);
+    const sessionSnap = await transaction.get(sessionRef);
+
+    if (!sessionSnap.exists()) {
+      throw new Error("Session not found.");
+    }
+
+    const session = sessionSnap.data() as Session;
+    if ((session.approval_status ?? "accepted") !== "accepted") {
+      throw new Error("Booking request is not accepted by vendor yet.");
+    }
+    if (session.status === "checked_in") {
+      throw new Error("Session is already checked in.");
+    }
+    if (session.status === "checked_out" || session.status === "cancelled") {
+      throw new Error("This session can no longer be checked in.");
+    }
 
     transaction.update(sessionRef, {
       status: "checked_in",
@@ -348,6 +580,7 @@ export async function checkOut(
   spotId: string,
   amount: number,
   platformFee: number,
+  markAsPaid = false,
 ): Promise<void> {
   await runTransaction(db, async (transaction) => {
     const sessionRef = doc(db, "sessions", sessionId);
@@ -366,7 +599,7 @@ export async function checkOut(
       check_out_time: serverTimestamp(),
       amount,
       platform_fee: platformFee,
-      payment_status: "paid",
+      payment_status: markAsPaid ? "paid" : "pending",
     });
 
     transaction.update(spotRef, {
@@ -482,6 +715,350 @@ export async function getSessionById(sessionId: string): Promise<(Session & { id
   return withId(snapshot.id, snapshot.data() as Session);
 }
 
+export function subscribeToSessionById(
+  sessionId: string,
+  onUpdate: (session: (Session & { id: string }) | null) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const sessionRef = doc(db, "sessions", sessionId);
+
+  return onSnapshot(
+    sessionRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onUpdate(null);
+        return;
+      }
+
+      onUpdate(withId(snapshot.id, snapshot.data() as Session));
+    },
+    (error) => {
+      console.error("[Firestore] Session subscription failed", error);
+      onError?.(error as Error);
+    },
+  );
+}
+
+export async function getSessionByAccessCode(
+  accessCode: string,
+): Promise<(Session & { id: string }) | null> {
+  const normalized = accessCode.trim().toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const snapshot = await getDocs(
+    query(collection(db, "sessions"), where("access_code", "==", normalized), limit(1)),
+  );
+
+  if (snapshot.empty) {
+    return null;
+  }
+
+  const first = snapshot.docs[0];
+  return withId(first.id, first.data() as Session);
+}
+
+function getOtpFieldPrefix(action: OtpAction): "entry_otp" | "exit_otp" {
+  return action === "check_in" ? "entry_otp" : "exit_otp";
+}
+
+function generateSixDigitOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+export async function generateSessionOtp(
+  sessionId: string,
+  action: OtpAction,
+): Promise<{ code: string; expiresAtMs: number }> {
+  const sessionRef = doc(db, "sessions", sessionId);
+  const snapshot = await getDoc(sessionRef);
+
+  if (!snapshot.exists()) {
+    throw new Error("Session not found.");
+  }
+
+  const session = snapshot.data() as Session;
+  if ((session.approval_status ?? "accepted") !== "accepted") {
+    throw new Error("Vendor has not accepted this booking yet.");
+  }
+
+  if (action === "check_in" && session.status !== "booked") {
+    throw new Error("Entry OTP can only be generated before check-in.");
+  }
+
+  if (action === "check_out" && session.status !== "checked_in") {
+    throw new Error("Exit OTP can only be generated after check-in.");
+  }
+
+  if (action === "check_in") {
+    const nowMs = Date.now();
+    if (nowMs < session.start_time_ms) {
+      throw new Error("Entry OTP is available only at your scheduled start time.");
+    }
+
+    if (nowMs > session.end_time_ms) {
+      await updateDoc(sessionRef, {
+        status: "cancelled",
+        approval_status: "rejected",
+        cancellation_reason: "slot_expired",
+        updated_at: serverTimestamp(),
+      });
+      throw new Error("Your time slot has passed away. This booking is now rejected.");
+    }
+  }
+
+  const code = generateSixDigitOtp();
+  const expiresAtMs = Date.now() + 10 * 60 * 1000;
+  const fieldPrefix = getOtpFieldPrefix(action);
+
+  await updateDoc(sessionRef, {
+    [`${fieldPrefix}.code`]: code,
+    [`${fieldPrefix}.expires_at_ms`]: expiresAtMs,
+    [`${fieldPrefix}.generated_at`]: serverTimestamp(),
+    [`${fieldPrefix}.verified_at`]: null,
+  });
+
+  return { code, expiresAtMs };
+}
+
+export async function processSessionOtp(
+  sessionId: string,
+  spotId: string,
+  action: OtpAction,
+  otpCode: string,
+  location: LatLng,
+): Promise<ProcessSessionOtpResult> {
+  if (!/^\d{6}$/.test(otpCode)) {
+    throw new Error("OTP must be exactly 6 digits.");
+  }
+
+  let result: ProcessSessionOtpResult = {
+    action,
+    finalAmount: 0,
+    extraAmount: 0,
+    overtimeMinutes: 0,
+  };
+
+  await runTransaction(db, async (transaction) => {
+    const sessionRef = doc(db, "sessions", sessionId);
+    const spotRef = doc(db, "parking_spots", spotId);
+
+    const [sessionSnap, spotSnap] = await Promise.all([
+      transaction.get(sessionRef),
+      transaction.get(spotRef),
+    ]);
+
+    if (!sessionSnap.exists()) {
+      throw new Error("Session not found.");
+    }
+    if (!spotSnap.exists()) {
+      throw new Error("Parking spot not found.");
+    }
+
+    const session = sessionSnap.data() as Session;
+    const spot = spotSnap.data() as ParkingSpot;
+
+    if (session.spot_id !== spotId) {
+      throw new Error("Session does not belong to this spot.");
+    }
+    if ((session.approval_status ?? "accepted") !== "accepted") {
+      throw new Error("Booking request is not accepted by vendor yet.");
+    }
+
+    if (action === "check_in") {
+      const nowMs = Date.now();
+      if (nowMs < session.start_time_ms) {
+        throw new Error("Entry verification is allowed only during the scheduled slot time.");
+      }
+
+      if (nowMs > session.end_time_ms) {
+        transaction.update(sessionRef, {
+          status: "cancelled",
+          approval_status: "rejected",
+          cancellation_reason: "slot_expired",
+          updated_at: serverTimestamp(),
+        });
+        throw new Error("Your time slot has passed away. This booking is now rejected.");
+      }
+    }
+
+    const fieldPrefix = getOtpFieldPrefix(action);
+    const otp = (session[fieldPrefix] as SessionOtp | null | undefined) ?? null;
+
+    if (!otp?.code || !otp.expires_at_ms) {
+      throw new Error(`${action === "check_in" ? "Entry" : "Exit"} OTP is not generated yet.`);
+    }
+    if (otp.code !== otpCode) {
+      throw new Error("Invalid OTP. Please check and retry.");
+    }
+    if (Date.now() > otp.expires_at_ms) {
+      throw new Error("OTP expired. Generate a new OTP.");
+    }
+
+    if (action === "check_in") {
+      if (session.status !== "booked") {
+        throw new Error("Session is not in a valid state for check-in.");
+      }
+
+      transaction.update(sessionRef, {
+        status: "checked_in",
+        check_in_time: serverTimestamp(),
+        check_in_location: location,
+        [`${fieldPrefix}.verified_at`]: serverTimestamp(),
+      });
+
+      transaction.update(spotRef, {
+        current_occupancy: increment(1),
+        updated_at: serverTimestamp(),
+      });
+
+      result = {
+        action,
+        finalAmount: Number((session.amount || 0).toFixed(2)),
+        extraAmount: 0,
+        overtimeMinutes: 0,
+      };
+      return;
+    }
+
+    if (session.status !== "checked_in") {
+      throw new Error("Session is not in a valid state for check-out.");
+    }
+
+    const vendorRef = doc(db, "vendors", spot.vendor_id);
+    const vendorSnap = await transaction.get(vendorRef);
+    const vendorRate =
+      vendorSnap.exists() && typeof (vendorSnap.data() as Vendor).platform_fee_rate === "number"
+        ? (vendorSnap.data() as Vendor).platform_fee_rate
+        : 0.15;
+
+    const overtimeMinutes = Math.max(0, Math.ceil((Date.now() - session.end_time_ms) / (60 * 1000)));
+    const extraAmount = Number((spot.pricing.hourly_rate * (overtimeMinutes / 60)).toFixed(2));
+    const finalAmount = Number(((session.amount || 0) + extraAmount).toFixed(2));
+    const platformFee = calculatePlatformFee(finalAmount, vendorRate);
+
+    transaction.update(sessionRef, {
+      status: "checked_out",
+      check_out_time: serverTimestamp(),
+      amount: finalAmount,
+      extra_amount: extraAmount,
+      overtime_minutes: overtimeMinutes,
+      platform_fee: platformFee,
+      payment_status: "pending",
+      [`${fieldPrefix}.verified_at`]: serverTimestamp(),
+    });
+
+    transaction.update(spotRef, {
+      current_occupancy: increment(-1),
+      updated_at: serverTimestamp(),
+    });
+
+    if (vendorSnap.exists()) {
+      transaction.update(vendorRef, {
+        revenue_earned: increment(Math.max(finalAmount - platformFee, 0)),
+      });
+    }
+
+    result = {
+      action,
+      finalAmount,
+      extraAmount,
+      overtimeMinutes,
+    };
+  });
+
+  return result;
+}
+
+export async function processSessionOtpByAccessCode(
+  accessCode: string,
+  action: OtpAction,
+  otpCode: string,
+): Promise<ProcessSessionOtpResult> {
+  const session = await getSessionByAccessCode(accessCode);
+  if (!session) {
+    throw new Error("Booking code not found.");
+  }
+
+  const spot = await getSpotById(session.spot_id);
+  if (!spot) {
+    throw new Error("Parking spot not found for this booking.");
+  }
+
+  // Use spot location as verified terminal location to avoid user-side geolocation dependency.
+  return processSessionOtp(session.id, session.spot_id, action, otpCode, spot.location);
+}
+
+export async function respondToBookingRequest(
+  sessionId: string,
+  decision: "accepted" | "rejected",
+): Promise<void> {
+  const sessionRef = doc(db, "sessions", sessionId);
+  const sessionSnap = await getDoc(sessionRef);
+
+  if (!sessionSnap.exists()) {
+    throw new Error("Booking request not found.");
+  }
+
+  const session = sessionSnap.data() as Session;
+  const currentApproval = session.approval_status ?? "accepted";
+
+  if (currentApproval !== "pending") {
+    throw new Error("This booking request is already processed.");
+  }
+
+  if (decision === "rejected") {
+    await updateDoc(sessionRef, {
+      approval_status: "rejected",
+      status: "cancelled",
+      cancellation_reason: "vendor_rejected",
+      updated_at: serverTimestamp(),
+    });
+    return;
+  }
+
+  const spotSnap = await getDoc(doc(db, "parking_spots", session.spot_id));
+  if (!spotSnap.exists()) {
+    throw new Error("Parking spot not found for this request.");
+  }
+
+  const spot = spotSnap.data() as ParkingSpot;
+  const sessionsQuery = query(
+    collection(db, "sessions"),
+    where("spot_id", "==", session.spot_id),
+    where("status", "in", ["booked", "checked_in"]),
+  );
+  const activeSessionsSnap = await getDocs(sessionsQuery);
+
+  const overlappingAccepted = activeSessionsSnap.docs.filter((activeDoc) => {
+    if (activeDoc.id === sessionId) {
+      return false;
+    }
+
+    const active = activeDoc.data() as Session;
+    if ((active.approval_status ?? "accepted") !== "accepted") {
+      return false;
+    }
+
+    return intervalsOverlap(
+      session.start_time_ms,
+      session.end_time_ms,
+      active.start_time_ms,
+      active.end_time_ms,
+    );
+  }).length;
+
+  if (overlappingAccepted >= Math.max(spot.total_spots, 1)) {
+    throw new Error("Cannot accept request. Slot capacity is full for this time range.");
+  }
+
+  await updateDoc(sessionRef, {
+    approval_status: "accepted",
+    updated_at: serverTimestamp(),
+  });
+}
+
 export async function markSessionPaid(
   sessionId: string,
   paymentMethod: "upi" | "cash",
@@ -504,6 +1081,55 @@ export async function getAllSessions(maxRows = 200): Promise<Array<Session & { i
   return snapshot.docs.map((sessionDoc) => withId(sessionDoc.id, sessionDoc.data() as Session));
 }
 
+export function subscribeToSessions(
+  onUpdate: (sessions: Array<Session & { id: string }>) => void,
+  onError?: (error: Error) => void,
+  maxRows = 300,
+): Unsubscribe {
+  const sessionsQuery = query(collection(db, "sessions"), orderBy("booking_time", "desc"), limit(maxRows));
+
+  return onSnapshot(
+    sessionsQuery,
+    (snapshot) => {
+      const sessions = snapshot.docs.map((sessionDoc) =>
+        withId(sessionDoc.id, sessionDoc.data() as Session),
+      );
+      onUpdate(sessions);
+    },
+    (error) => {
+      console.error("[Firestore] Session subscription failed", error);
+      onError?.(error as Error);
+    },
+  );
+}
+
+export function subscribeToUserSessions(
+  userId: string,
+  onUpdate: (sessions: Array<Session & { id: string }>) => void,
+  onError?: (error: Error) => void,
+  maxRows = 300,
+): Unsubscribe {
+  const sessionsQuery = query(
+    collection(db, "sessions"),
+    where("user_id", "==", userId),
+    limit(maxRows),
+  );
+
+  return onSnapshot(
+    sessionsQuery,
+    (snapshot) => {
+      const sessions = snapshot.docs
+        .map((sessionDoc) => withId(sessionDoc.id, sessionDoc.data() as Session))
+        .sort((left, right) => timestampToMillis(right.booking_time) - timestampToMillis(left.booking_time));
+      onUpdate(sessions);
+    },
+    (error) => {
+      console.error("[Firestore] User session subscription failed", error);
+      onError?.(error as Error);
+    },
+  );
+}
+
 export async function incrementUserCredits(userId: string, credits: number): Promise<void> {
   await setDoc(
     doc(db, "users", userId),
@@ -512,6 +1138,269 @@ export async function incrementUserCredits(userId: string, credits: number): Pro
       created_at: serverTimestamp(),
     },
     { merge: true },
+  );
+}
+
+export async function reportCommunitySpot(
+  payload: ReportCommunitySpotPayload,
+): Promise<{ clusterId: string; reportCount: number; isVerified: boolean }> {
+  const normalizedUserId = payload.user_id.trim();
+  if (!normalizedUserId) {
+    throw new Error("User ID is required to report community spot.");
+  }
+
+  const clustersSnapshot = await getDocs(collection(db, "community_spot_clusters"));
+  const nearbyCluster = clustersSnapshot.docs
+    .map((clusterDoc) => withId(clusterDoc.id, clusterDoc.data() as CommunitySpotCluster))
+    .find((cluster) => haversine(cluster.location, payload.location) * 1000 <= 20);
+
+  if (!nearbyCluster) {
+    const reportCount = 1;
+    const createdRef = await addDoc(collection(db, "community_spot_clusters"), {
+      location: payload.location,
+      tag: (payload.tag || "Community Public Spot").trim(),
+      report_count: reportCount,
+      report_user_ids: [normalizedUserId],
+      is_verified: false,
+      reliability_score: calculateCommunityReliabilityScore(reportCount, 0, 0),
+      audit_total_count: 0,
+      audit_positive_count: 0,
+      created_by: normalizedUserId,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+      verified_at: null,
+    } satisfies Omit<CommunitySpotCluster, "id">);
+
+    return {
+      clusterId: createdRef.id,
+      reportCount,
+      isVerified: false,
+    };
+  }
+
+  const clusterRef = doc(db, "community_spot_clusters", nearbyCluster.id);
+  let response: { clusterId: string; reportCount: number; isVerified: boolean } = {
+    clusterId: nearbyCluster.id,
+    reportCount: nearbyCluster.report_count,
+    isVerified: nearbyCluster.is_verified,
+  };
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(clusterRef);
+    if (!snapshot.exists()) {
+      throw new Error("Community cluster not found.");
+    }
+
+    const cluster = snapshot.data() as CommunitySpotCluster;
+    const userIds = Array.isArray(cluster.report_user_ids) ? cluster.report_user_ids : [];
+    if (userIds.includes(normalizedUserId)) {
+      throw new Error("You already reported this community spot.");
+    }
+
+    const nextReportCount = userIds.length + 1;
+    const nextIsVerified = nextReportCount >= 7;
+    const nextAuditTotal = cluster.audit_total_count ?? 0;
+    const nextAuditPositive = cluster.audit_positive_count ?? 0;
+
+    transaction.update(clusterRef, {
+      report_user_ids: arrayUnion(normalizedUserId),
+      report_count: nextReportCount,
+      is_verified: nextIsVerified,
+      verified_at: nextIsVerified ? serverTimestamp() : cluster.verified_at ?? null,
+      tag: payload.tag?.trim() || cluster.tag || "Community Public Spot",
+      reliability_score: calculateCommunityReliabilityScore(
+        nextReportCount,
+        nextAuditPositive,
+        nextAuditTotal,
+      ),
+      updated_at: serverTimestamp(),
+    });
+
+    response = {
+      clusterId: nearbyCluster.id,
+      reportCount: nextReportCount,
+      isVerified: nextIsVerified,
+    };
+  });
+
+  return response;
+}
+
+export async function addCommunitySpotAudit(
+  clusterId: string,
+  userId: string,
+  status: "space_left" | "full",
+  message: string | undefined,
+  userLocation: LatLng,
+): Promise<void> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("User ID required for community audit.");
+  }
+  const normalizedMessage = (message || "").trim().slice(0, 220);
+
+  const clusterRef = doc(db, "community_spot_clusters", clusterId);
+  const clusterSnapshot = await getDoc(clusterRef);
+  if (!clusterSnapshot.exists()) {
+    throw new Error("Community spot not found.");
+  }
+
+  const cluster = clusterSnapshot.data() as CommunitySpotCluster;
+  const distanceMeters = haversine(cluster.location, userLocation) * 1000;
+  if (distanceMeters > 30) {
+    throw new Error("You must be within 30 meters of the community spot to audit.");
+  }
+
+  await addDoc(collection(db, "community_spot_audits"), {
+    cluster_id: clusterId,
+    user_id: normalizedUserId,
+    status,
+    message: normalizedMessage,
+    location: userLocation,
+    created_at: serverTimestamp(),
+  } satisfies Omit<CommunitySpotAudit, "id">);
+
+  const auditsSnapshot = await getDocs(
+    query(
+      collection(db, "community_spot_audits"),
+      where("cluster_id", "==", clusterId),
+      orderBy("created_at", "desc"),
+      limit(50),
+    ),
+  );
+  const audits = auditsSnapshot.docs.map((auditDoc) => auditDoc.data() as CommunitySpotAudit);
+  const auditTotalCount = audits.length;
+  const auditPositiveCount = audits.filter((audit) => audit.status === "space_left").length;
+
+  await updateDoc(clusterRef, {
+    latest_audit_status: status,
+    latest_audit_message: normalizedMessage,
+    latest_audit_at: serverTimestamp(),
+    audit_total_count: auditTotalCount,
+    audit_positive_count: auditPositiveCount,
+    reliability_score: calculateCommunityReliabilityScore(
+      cluster.report_count ?? 0,
+      auditPositiveCount,
+      auditTotalCount,
+    ),
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getCommunitySpotAuditHistory(
+  clusterId: string,
+  maxRows = 30,
+): Promise<Array<CommunitySpotAudit & { id: string }>> {
+  const cappedRows = Math.max(1, Math.min(maxRows, 100));
+  const auditsSnapshot = await getDocs(
+    query(
+      collection(db, "community_spot_audits"),
+      where("cluster_id", "==", clusterId),
+      orderBy("created_at", "desc"),
+      limit(cappedRows),
+    ),
+  );
+
+  return auditsSnapshot.docs.map((auditDoc) => withId(auditDoc.id, auditDoc.data() as CommunitySpotAudit));
+}
+
+export async function addPublicSpotAudit(
+  spotId: string,
+  spotName: string,
+  spotAddress: string,
+  userId: string,
+  status: "space_left" | "full",
+  message: string | undefined,
+  userLocation: LatLng,
+  spotLocation: LatLng,
+): Promise<void> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("User ID required for public spot audit.");
+  }
+
+  const distanceMeters = haversine(spotLocation, userLocation) * 1000;
+  if (distanceMeters > 60) {
+    throw new Error("You must be within 60 meters of the public spot to audit.");
+  }
+
+  const normalizedMessage = (message || "").trim().slice(0, 220);
+
+  await addDoc(collection(db, "public_spot_audits"), {
+    spot_id: spotId,
+    spot_name: spotName.trim() || "Public Spot",
+    spot_address: spotAddress.trim() || "Address unavailable",
+    user_id: normalizedUserId,
+    status,
+    message: normalizedMessage,
+    location: userLocation,
+    created_at: serverTimestamp(),
+  } satisfies Omit<PublicSpotAudit, "id">);
+}
+
+export async function getPublicSpotAuditHistory(
+  spotId: string,
+  maxRows = 30,
+): Promise<Array<PublicSpotAudit & { id: string }>> {
+  const trimmedSpotId = spotId.trim();
+  if (!trimmedSpotId) {
+    return [];
+  }
+
+  const cappedRows = Math.max(1, Math.min(maxRows, 100));
+  const auditsSnapshot = await getDocs(
+    query(
+      collection(db, "public_spot_audits"),
+      where("spot_id", "==", trimmedSpotId),
+      orderBy("created_at", "desc"),
+      limit(cappedRows),
+    ),
+  );
+
+  return auditsSnapshot.docs.map((auditDoc) => withId(auditDoc.id, auditDoc.data() as PublicSpotAudit));
+}
+
+export async function deleteCommunitySpotCluster(clusterId: string): Promise<void> {
+  await deleteDoc(doc(db, "community_spot_clusters", clusterId));
+
+  const auditsSnapshot = await getDocs(
+    query(collection(db, "community_spot_audits"), where("cluster_id", "==", clusterId), limit(500)),
+  );
+
+  if (!auditsSnapshot.empty) {
+    const batch = writeBatch(db);
+    auditsSnapshot.docs.forEach((auditDoc) => {
+      batch.delete(auditDoc.ref);
+    });
+    await batch.commit();
+  }
+}
+
+export function subscribeToCommunitySpots(
+  onUpdate: (clusters: Array<CommunitySpotCluster & { id: string }>) => void,
+  onError?: (error: Error) => void,
+  options?: { verifiedOnly?: boolean; maxRows?: number },
+): Unsubscribe {
+  const base = collection(db, "community_spot_clusters");
+  const verifiedOnly = options?.verifiedOnly === true;
+  const maxRows = options?.maxRows ?? 300;
+
+  const communityQuery = verifiedOnly
+    ? query(base, where("is_verified", "==", true), limit(maxRows))
+    : query(base, limit(maxRows));
+
+  return onSnapshot(
+    communityQuery,
+    (snapshot) => {
+      const rows = snapshot.docs
+        .map((clusterDoc) => withId(clusterDoc.id, clusterDoc.data() as CommunitySpotCluster))
+        .sort((left, right) => (right.report_count ?? 0) - (left.report_count ?? 0));
+      onUpdate(rows);
+    },
+    (error) => {
+      console.error("[Firestore] Community spot subscription failed", error);
+      onError?.(error as Error);
+    },
   );
 }
 
@@ -564,8 +1453,9 @@ export async function ensurePublicParkingSpots(): Promise<void> {
       continue;
     }
 
-    const spotPayload = { ...spot };
-    delete spotPayload.id;
+    const spotPayload = Object.fromEntries(
+      Object.entries(spot).filter(([key]) => key !== "id"),
+    );
     await setDoc(spotRef, {
       ...spotPayload,
       created_at: serverTimestamp(),
