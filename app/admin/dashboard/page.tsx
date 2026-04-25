@@ -1,9 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { ApprovalModal } from "@/components/admin/ApprovalModal";
 import { VendorTable } from "@/components/admin/VendorTable";
-import { Badge, Button, Card } from "@/components/ui";
+import { Badge, Button, Card, Modal } from "@/components/ui";
 import {
   approveVendor,
   deleteCommunitySpotCluster,
@@ -23,6 +24,20 @@ type VendorWithId = Vendor & { id: string };
 type SpotWithId = ParkingSpot & { id: string };
 type CommunitySpotWithId = CommunitySpotCluster & { id: string };
 
+function formatTimestamp(value: unknown): string {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toMillis" in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    const millis = (value as { toMillis: () => number }).toMillis();
+    return new Date(millis).toLocaleString();
+  }
+
+  return "N/A";
+}
+
 export default function AdminDashboardPage() {
   const [vendors, setVendors] = useState<VendorWithId[]>([]);
   const [spots, setSpots] = useState<SpotWithId[]>([]);
@@ -32,6 +47,7 @@ export default function AdminDashboardPage() {
   const [selectedVendor, setSelectedVendor] = useState<VendorWithId | null>(null);
   const [platformRevenue, setPlatformRevenue] = useState(0);
   const [deletingClusterId, setDeletingClusterId] = useState<string | null>(null);
+  const [proofModal, setProofModal] = useState<{ title: string; imageUrl: string } | null>(null);
 
   useEffect(() => {
     const unsubscribeVendors = subscribeToVendors(setVendors);
@@ -154,9 +170,35 @@ export default function AdminDashboardPage() {
                             <Badge tone="info">Reports: {cluster.report_count}</Badge>
                             <Badge tone="neutral">Reliability: {cluster.reliability_score || 0}%</Badge>
                           </div>
+                          <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
+                            Tag: <strong>{cluster.tag || "Community Public Spot"}</strong>
+                          </p>
+                          <p className="card-subtitle">
+                            Estimated yards: <strong>{cluster.estimated_yards ?? "N/A"}</strong>
+                          </p>
                           <p className="card-subtitle">
                             {cluster.location.lat.toFixed(6)}, {cluster.location.lng.toFixed(6)}
                           </p>
+                          <p className="card-subtitle">Created by: {cluster.created_by || "N/A"}</p>
+                          <p className="card-subtitle">Created at: {formatTimestamp(cluster.created_at)}</p>
+                          {cluster.report_image_url ? (
+                            <div className="hero-actions">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setProofModal({
+                                    title: cluster.tag || "Community Public Spot",
+                                    imageUrl: cluster.report_image_url || "",
+                                  })
+                                }
+                              >
+                                View Proof Image
+                              </Button>
+                            </div>
+                          ) : (
+                            <p className="card-subtitle">Proof image: Not provided</p>
+                          )}
                           <div className="hero-actions">
                             <Button
                               variant="secondary"
@@ -186,9 +228,36 @@ export default function AdminDashboardPage() {
                             <Badge tone="info">Reports: {cluster.report_count}</Badge>
                             <Badge tone="neutral">Reliability: {cluster.reliability_score || 0}%</Badge>
                           </div>
+                          <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
+                            Tag: <strong>{cluster.tag || "Community Public Spot"}</strong>
+                          </p>
+                          <p className="card-subtitle">
+                            Estimated yards: <strong>{cluster.estimated_yards ?? "N/A"}</strong>
+                          </p>
                           <p className="card-subtitle">
                             {cluster.location.lat.toFixed(6)}, {cluster.location.lng.toFixed(6)}
                           </p>
+                          <p className="card-subtitle">Created by: {cluster.created_by || "N/A"}</p>
+                          <p className="card-subtitle">Created at: {formatTimestamp(cluster.created_at)}</p>
+                          <p className="card-subtitle">Verified at: {formatTimestamp(cluster.verified_at)}</p>
+                          {cluster.report_image_url ? (
+                            <div className="hero-actions">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setProofModal({
+                                    title: cluster.tag || "Community Public Spot",
+                                    imageUrl: cluster.report_image_url || "",
+                                  })
+                                }
+                              >
+                                View Proof Image
+                              </Button>
+                            </div>
+                          ) : (
+                            <p className="card-subtitle">Proof image: Not provided</p>
+                          )}
                           <div className="hero-actions">
                             <Button
                               variant="secondary"
@@ -218,6 +287,25 @@ export default function AdminDashboardPage() {
         onApprove={(vendor) => void handleApprove(vendor)}
         onReject={(vendor) => void handleReject(vendor)}
       />
+      <Modal
+        open={Boolean(proofModal)}
+        onClose={() => setProofModal(null)}
+        title={proofModal ? `${proofModal.title} Proof` : "Proof"}
+        description="Image uploaded from the public spot report form."
+      >
+        {proofModal?.imageUrl ? (
+          <Image
+            src={proofModal.imageUrl}
+            alt={`${proofModal.title} proof`}
+            width={920}
+            height={540}
+            unoptimized
+            style={{ width: "100%", height: "auto", borderRadius: "12px", objectFit: "cover" }}
+          />
+        ) : (
+          <p className="card-subtitle">Proof image unavailable.</p>
+        )}
+      </Modal>
     </div>
   );
 }

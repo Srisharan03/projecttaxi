@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Button, Modal } from "@/components/ui";
 import { getCurrentPosition } from "@/lib/geofence";
@@ -12,11 +13,48 @@ interface ReportPublicSpotModalProps {
   userId: string;
 }
 
+const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+async function uploadReportImage(file: File): Promise<string> {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error(
+      "Image upload is not configured. Add NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET.",
+    );
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder", "community-reports");
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error("Image upload failed. Please try another image.");
+  }
+
+  const payload = (await response.json()) as { secure_url?: string };
+  if (!payload.secure_url) {
+    throw new Error("Image upload failed to return URL.");
+  }
+
+  return payload.secure_url;
+}
+
 export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpotModalProps) {
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [tag, setTag] = useState("Community Public Spot");
+  const [estimatedYards, setEstimatedYards] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [uploadedImageUrl, setUploadedImageUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -38,6 +76,14 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
       });
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
   const fillCurrentLocation = async () => {
     setError("");
     setMessage("");
@@ -55,8 +101,13 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
   const submit = async () => {
     const latNumber = Number(lat);
     const lngNumber = Number(lng);
+    const yardsNumber = Number(estimatedYards);
     if (Number.isNaN(latNumber) || Number.isNaN(lngNumber)) {
       setError("Enter valid latitude and longitude.");
+      return;
+    }
+    if (estimatedYards.trim() && (Number.isNaN(yardsNumber) || yardsNumber <= 0)) {
+      setError("Estimated yards must be a positive number.");
       return;
     }
 
@@ -65,10 +116,19 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
     setMessage("");
 
     try {
+      let reportImageUrl = uploadedImageUrl;
+      if (imageFile && !uploadedImageUrl) {
+        setUploadingImage(true);
+        reportImageUrl = await uploadReportImage(imageFile);
+        setUploadedImageUrl(reportImageUrl);
+      }
+
       const result = await reportCommunitySpot({
         user_id: userId,
         location: { lat: latNumber, lng: lngNumber },
         tag,
+        estimated_yards: estimatedYards.trim() ? yardsNumber : undefined,
+        report_image_url: reportImageUrl || undefined,
       });
 
       setMessage(
@@ -79,6 +139,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to submit report.");
     } finally {
+      setUploadingImage(false);
       setBusy(false);
     }
   };
@@ -113,6 +174,54 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
             />
           </label>
 
+          <label>
+            <span className="card-subtitle">Yards (estimated)</span>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              step="0.5"
+              value={estimatedYards}
+              onChange={(event) => setEstimatedYards(event.target.value)}
+              placeholder="120"
+            />
+          </label>
+
+          <label>
+            <span className="card-subtitle">Upload or Take Image</span>
+            <input
+              className="input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setImageFile(file);
+                setUploadedImageUrl("");
+                setMessage("");
+                setError("");
+
+                if (!file) {
+                  setImagePreviewUrl("");
+                  return;
+                }
+
+                const objectUrl = URL.createObjectURL(file);
+                setImagePreviewUrl(objectUrl);
+              }}
+            />
+            {imagePreviewUrl ? (
+              <Image
+                src={imagePreviewUrl}
+                alt="Public spot preview"
+                width={720}
+                height={360}
+                unoptimized
+                className="community-report-preview"
+              />
+            ) : null}
+          </label>
+
           <div className="community-coords-grid">
             <label>
               <span className="card-subtitle">Latitude</span>
@@ -138,7 +247,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
             <Button variant="secondary" onClick={() => void fillCurrentLocation()}>
               Refresh GPS
             </Button>
-            <Button onClick={() => void submit()} isLoading={busy}>
+            <Button onClick={() => void submit()} isLoading={busy || uploadingImage}>
               Submit Community Report
             </Button>
           </div>

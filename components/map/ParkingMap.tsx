@@ -83,6 +83,8 @@ export function ParkingMap({
   const [historyRows, setHistoryRows] = useState<Array<CommunitySpotAudit & { id: string }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [proofModalImageUrl, setProofModalImageUrl] = useState("");
+  const [proofModalTitle, setProofModalTitle] = useState("");
 
   const center = useMemo(() => {
     const selected = spots.find((spot) => spot.id === selectedSpotId);
@@ -164,16 +166,16 @@ export function ParkingMap({
                 <InfoWindowF onCloseClick={() => setActiveInfoSpotId(null)}>
                   <div>
                     {spot.images?.[0] ? (
-                      <div style={{ marginBottom: "0.5rem" }}>
-                        <Image
-                          src={spot.images[0]}
-                          alt={`${spot.name} preview`}
-                          width={260}
-                          height={140}
-                          unoptimized
-                          style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: "8px" }}
-                        />
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setProofModalImageUrl(spot.images[0]);
+                          setProofModalTitle(`${spot.name} Proof Image`);
+                        }}
+                      >
+                        View Proof
+                      </Button>
                     ) : null}
                     <strong>{spot.name}</strong>
                     <div>{spot.address}</div>
@@ -236,6 +238,18 @@ export function ParkingMap({
                     <div style={{ fontSize: "0.85rem", color: "#9a3412" }}>
                       Community-reported public space. It may already be occupied on arrival.
                     </div>
+                    {cluster.report_image_url ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setProofModalImageUrl(cluster.report_image_url || "");
+                          setProofModalTitle(`${cluster.tag || "Community Public Spot"} Proof Image`);
+                        }}
+                      >
+                        View Proof
+                      </Button>
+                    ) : null}
                     {onAuditCommunitySpot ? (
                       <>
                         <label style={{ display: "grid", gap: "0.2rem" }}>
@@ -341,6 +355,25 @@ export function ParkingMap({
             ))}
           </div>
         ) : null}
+      </Modal>
+      <Modal
+        open={Boolean(proofModalImageUrl)}
+        onClose={() => setProofModalImageUrl("")}
+        title={proofModalTitle || "Proof Image"}
+        description="Visual proof submitted by community reports."
+      >
+        {proofModalImageUrl ? (
+          <Image
+            src={proofModalImageUrl}
+            alt={proofModalTitle || "Proof image"}
+            width={900}
+            height={520}
+            unoptimized
+            style={{ width: "100%", height: "auto", borderRadius: "12px", objectFit: "cover" }}
+          />
+        ) : (
+          <p className="card-subtitle">No proof image available.</p>
+        )}
       </Modal>
     </>
   );

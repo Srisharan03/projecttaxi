@@ -1,5 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
-import { Badge, Button, Card } from "@/components/ui";
+import { Badge, Button, Card, Modal } from "@/components/ui";
 import type { RankedSpot } from "@/lib/optimization";
 import { formatCurrency, formatDistanceKm } from "@/lib/utils";
 
@@ -32,9 +35,11 @@ export function SpotCard({
   onRoute,
   onReport,
 }: SpotCardProps) {
+  const [showProofModal, setShowProofModal] = useState(false);
   const occupancyText = `${spot.current_occupancy}/${spot.total_spots} occupied`;
   const previewImage = spot.images?.[0] ?? "";
-  const isPublicSpot = spot.vendor_id === "google-public";
+  const isPublicSpot = spot.vendor_id === "google-public" || spot.vendor_id === "community-public";
+  const showProofButton = Boolean(previewImage);
 
   return (
     <Card
@@ -56,18 +61,6 @@ export function SpotCard({
         }
       }}
     >
-      {previewImage ? (
-        <div style={{ marginBottom: "0.75rem" }}>
-          <Image
-            src={previewImage}
-            alt={`${spot.name} preview`}
-            width={800}
-            height={320}
-            style={{ width: "100%", height: "140px", objectFit: "cover", borderRadius: "12px" }}
-          />
-        </div>
-      ) : null}
-
       <div className="spot-card-grid">
         <div>
           <div className="spot-card-label">Rate</div>
@@ -85,14 +78,12 @@ export function SpotCard({
           <div className="spot-card-label">To Destination</div>
           <div className="spot-card-value">{formatDistanceKm(spot.destinationDistanceKm)}</div>
         </div>
-        <div>
-          <div className="spot-card-label">Trust</div>
-          <div className="spot-card-value">{spot.trust_score}/100</div>
-        </div>
-        <div>
-          <div className="spot-card-label">Occupancy</div>
-          <Badge tone={getAvailabilityTone(spot)}>{occupancyText}</Badge>
-        </div>
+        {!isPublicSpot ? (
+          <div>
+            <div className="spot-card-label">Occupancy</div>
+            <Badge tone={getAvailabilityTone(spot)}>{occupancyText}</Badge>
+          </div>
+        ) : null}
         <div>
           <div className="spot-card-label">Route Fit</div>
           <div className="spot-card-value">{spot.routeLabel}</div>
@@ -103,9 +94,16 @@ export function SpotCard({
         <Button size="sm" variant="secondary" onClick={onRoute}>
           Navigate
         </Button>
-        <Button size="sm" variant="ghost" onClick={onReport}>
-          {spot.conflict_flag ? "Verify" : "Audit"}
-        </Button>
+        {isPublicSpot ? (
+          <Button size="sm" variant="ghost" onClick={onReport}>
+            {spot.conflict_flag ? "Verify" : "Audit"}
+          </Button>
+        ) : null}
+        {showProofButton ? (
+          <Button style={{ gridColumn: "span 2" }} size="sm" variant="ghost" onClick={() => setShowProofModal(true)}>
+            View Proof
+          </Button>
+        ) : null}
         {isPublicSpot ? (
           <Button style={{ gridColumn: "span 2" }} onClick={onRoute} disabled={spot.status !== "open"}>
             {spot.status === "open" ? "Navigate (Public Spot)" : "Closed"}
@@ -118,6 +116,25 @@ export function SpotCard({
           </>
         )}
       </div>
+      <Modal
+        open={showProofModal}
+        onClose={() => setShowProofModal(false)}
+        title={`${spot.name} Proof Image`}
+        description="Community-provided visual proof for reliability."
+      >
+        {previewImage ? (
+          <Image
+            src={previewImage}
+            alt={`${spot.name} proof`}
+            width={900}
+            height={520}
+            unoptimized
+            style={{ width: "100%", height: "auto", borderRadius: "12px", objectFit: "cover" }}
+          />
+        ) : (
+          <p className="card-subtitle">No proof image available.</p>
+        )}
+      </Modal>
     </Card>
   );
 }

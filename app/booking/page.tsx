@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { BookingForm, type BookingDraft } from "@/components/booking/BookingForm";
@@ -9,12 +8,16 @@ import { SpotSummary } from "@/components/booking/SpotSummary";
 import { Badge, Button, Card, Modal } from "@/components/ui";
 import {
   createSession,
+  extendSession,
   generateSessionOtp,
+  previewSessionExtension,
+  getSpots,
   getSpotById,
   subscribeToUserSessions,
   type OtpAction,
   type ParkingSpot,
   type Session,
+  type SessionExtensionPreview,
 } from "@/lib/firestore";
 import "@/styles/booking.css";
 
@@ -75,8 +78,33 @@ function formatSessionTime(value: unknown): string {
   return "Not available";
 }
 
+function formatDurationMinutes(minutes: number): string {
+  if (minutes <= 0) {
+    return "0 min";
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  if (hours > 0 && rem > 0) {
+    return `${hours}h ${rem}m`;
+  }
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+  return `${rem}m`;
+}
+
 function isActiveSession(session: SessionWithId): boolean {
   return session.status === "booked" || session.status === "checked_in";
+}
+
+function getShortLocationName(address: string): string {
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const candidate = parts[1] || parts[0] || "Unknown";
+  return candidate.length > 28 ? `${candidate.slice(0, 28)}...` : candidate;
 }
 
 function BookingPageContent() {
@@ -99,6 +127,14 @@ function BookingPageContent() {
   const [otpCode, setOtpCode] = useState("");
   const [otpExpiresAt, setOtpExpiresAt] = useState<number>(0);
   const [otpAction, setOtpAction] = useState<OtpAction>("check_in");
+  const [extendMinutes, setExtendMinutes] = useState(30);
+  const [extensionPreview, setExtensionPreview] = useState<SessionExtensionPreview | null>(null);
+  const [extensionBusy, setExtensionBusy] = useState(false);
+  const [extensionError, setExtensionError] = useState("");
+  const [extensionSuccess, setExtensionSuccess] = useState("");
+  const [showExpiryReminder, setShowExpiryReminder] = useState(false);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+  const [spotMapById, setSpotMapById] = useState<Record<string, SpotWithId>>({});
 
   useEffect(() => {
     return subscribeToUserSessions(
@@ -131,6 +167,14 @@ function BookingPageContent() {
   }, [isCreatingNew]);
 
   useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     if (!isCreatingNew || !spotIdFromQuery) {
       return;
     }
@@ -143,6 +187,28 @@ function BookingPageContent() {
         setError(fetchError instanceof Error ? fetchError.message : "Failed to load spot.");
       });
   }, [isCreatingNew, spotIdFromQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSpots()
+      .then((rows) => {
+        if (cancelled) {
+          return;
+        }
+        const next = rows.reduce<Record<string, SpotWithId>>((acc, row) => {
+          acc[row.id] = row;
+          return acc;
+        }, {});
+        setSpotMapById(next);
+      })
+      .catch(() => {
+        // Keep booking list usable even if spot lookup fails.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
@@ -158,6 +224,68 @@ function BookingPageContent() {
       setSpot(result);
     });
   }, [selectedSession, isCreatingNew]);
+
+  useEffect(() => {
+    if (!selectedSession || selectedSession.status !== "checked_in") {
+      return;
+    }
+
+    const now = Date.now();
+    const triggerAtMs = selectedSession.end_time_ms - 10 * 60 * 1000;
+    const delay = Math.max(0, triggerAtMs - now);
+    const reminderKey = `expiry-reminder-${selectedSession.id}`;
+
+    const notify = () => {
+      setShowExpiryReminder(true);
+
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const alreadyNotified = window.localStorage.getItem(reminderKey) === "1";
+      if (alreadyNotified) {
+        return;
+      }
+
+      window.localStorage.setItem(reminderKey, "1");
+
+      if (!("Notification" in window)) {
+        return;
+      }
+
+      const dispatchNotification = () => {
+        try {
+          new Notification("Parking session ending soon", {
+            body: "Your booking ends in about 10 minutes. Extend now if needed.",
+          });
+        } catch {
+          // Keep in-app reminder active even if browser notification fails.
+        }
+      };
+
+      if (Notification.permission === "granted") {
+        dispatchNotification();
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission()
+          .then((permission) => {
+            if (permission === "granted") {
+              dispatchNotification();
+            }
+          })
+          .catch(() => {
+            // Non-blocking: in-app reminder already shown.
+          });
+      }
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      notify();
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [selectedSession]);
 
   const bookingTiming = useMemo(() => {
     const start = buildDateTime(draft.date, draft.startTime);
@@ -199,6 +327,8 @@ function BookingPageContent() {
 
   const sessionStatus = selectedSession?.status ?? "booked";
   const sessionApprovalStatus = selectedSession?.approval_status ?? "pending";
+  const isAccepted = sessionApprovalStatus === "accepted";
+  const isRejected = sessionApprovalStatus === "rejected";
   const bookingCode = selectedSession?.access_code ?? "";
   const sessionAmount = Number((selectedSession?.amount || 0).toFixed(2));
   const sessionExtraAmount = Number((selectedSession?.extra_amount || 0).toFixed(2));
@@ -211,6 +341,16 @@ function BookingPageContent() {
   const checkOutTimeLabel = selectedSession?.check_out_time
     ? formatSessionTime(selectedSession.check_out_time)
     : "";
+  const sessionEndMs = selectedSession?.end_time_ms ?? 0;
+  const minutesToExpiry =
+    selectedSession && sessionEndMs > 0 ? Math.ceil((sessionEndMs - currentTimeMs) / (60 * 1000)) : null;
+  const canExtendSession =
+    Boolean(selectedSessionId) &&
+    isAccepted &&
+    !isRejected &&
+    sessionStatus === "checked_in" &&
+    (minutesToExpiry === null || minutesToExpiry > 0);
+  const showActiveExpiryReminder = showExpiryReminder && sessionStatus === "checked_in";
 
   const handleGenerateOtp = async (action: OtpAction) => {
     if (!selectedSessionId) {
@@ -285,6 +425,10 @@ function BookingPageContent() {
       setIsCreatingNew(false);
       setOtpCode("");
       setOtpExpiresAt(0);
+      setExtensionPreview(null);
+      setExtensionError("");
+      setExtensionSuccess("");
+      setShowExpiryReminder(false);
       setSuccessMessage("Booking request sent successfully. Waiting for vendor approval.");
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create session.");
@@ -294,8 +438,75 @@ function BookingPageContent() {
     }
   };
 
-  const isAccepted = sessionApprovalStatus === "accepted";
-  const isRejected = sessionApprovalStatus === "rejected";
+  const handlePreviewExtension = async () => {
+    if (!selectedSessionId || !selectedSession) {
+      setExtensionError("Select an active session first.");
+      return;
+    }
+
+    const requestedEndMs = selectedSession.end_time_ms + extendMinutes * 60 * 1000;
+    if (requestedEndMs <= selectedSession.end_time_ms) {
+      setExtensionError("Choose a valid extension duration.");
+      return;
+    }
+
+    setExtensionBusy(true);
+    setExtensionError("");
+    setExtensionSuccess("");
+
+    try {
+      const preview = await previewSessionExtension(selectedSessionId, requestedEndMs);
+      setExtensionPreview(preview);
+      if (!preview.possible) {
+        setExtensionError(preview.note);
+      }
+    } catch (previewError) {
+      setExtensionPreview(null);
+      setExtensionError(
+        previewError instanceof Error ? previewError.message : "Unable to preview extension.",
+      );
+    } finally {
+      setExtensionBusy(false);
+    }
+  };
+
+  const handleApplyExtension = async () => {
+    if (!selectedSessionId || !selectedSession) {
+      setExtensionError("Select an active session first.");
+      return;
+    }
+
+    const requestedEndMs = selectedSession.end_time_ms + extendMinutes * 60 * 1000;
+    if (requestedEndMs <= selectedSession.end_time_ms) {
+      setExtensionError("Choose a valid extension duration.");
+      return;
+    }
+
+    setExtensionBusy(true);
+    setExtensionError("");
+    setExtensionSuccess("");
+
+    try {
+      const applied = await extendSession(selectedSessionId, requestedEndMs);
+      setExtensionPreview(applied);
+
+      if (applied.allowedEndMs < applied.requestedEndMs) {
+        setExtensionSuccess(
+          `Partially extended until ${new Date(applied.allowedEndMs).toLocaleTimeString()}. Extra charge: Rs ${Math.round(applied.allowedExtraAmount)}.`,
+        );
+      } else {
+        setExtensionSuccess(
+          `Booking extended successfully. Extra charge: Rs ${Math.round(applied.allowedExtraAmount)}.`,
+        );
+      }
+      setShowExpiryReminder(false);
+    } catch (extendError) {
+      setExtensionError(extendError instanceof Error ? extendError.message : "Unable to extend booking.");
+    } finally {
+      setExtensionBusy(false);
+    }
+  };
+
   const canGenerateEntryOtp =
     Boolean(selectedSessionId) && isAccepted && !isRejected && sessionStatus === "booked";
   const canGenerateExitOtp =
@@ -353,6 +564,10 @@ function BookingPageContent() {
                     setIsBookingModalOpen(true);
                     setSuccessMessage("");
                     setError("");
+                    setExtensionPreview(null);
+                    setExtensionError("");
+                    setExtensionSuccess("");
+                    setShowExpiryReminder(false);
                   }}
                 >
                   <div className="hero-actions">
@@ -360,9 +575,32 @@ function BookingPageContent() {
                     <Badge tone="info">Code: {session.access_code}</Badge>
                     <Badge tone="warning">Rs {Math.round(session.amount || 0)}</Badge>
                   </div>
-                  <p className="card-subtitle" style={{ marginTop: "0.45rem" }}>
-                    {new Date(session.start_time_iso).toLocaleString()} to {new Date(session.end_time_iso).toLocaleString()}
-                  </p>
+                  <div className="form-grid" style={{ marginTop: "0.45rem", gap: "0.3rem" }}>
+                    <p className="card-subtitle" style={{ margin: 0 }}>
+                      Location:{" "}
+                      <strong>
+                        {spotMapById[session.spot_id]
+                          ? getShortLocationName(spotMapById[session.spot_id].address)
+                          : "Loading..."}
+                      </strong>
+                    </p>
+                    <p className="card-subtitle" style={{ margin: 0 }}>
+                      Park Start:{" "}
+                      <strong>
+                        {session.check_in_time
+                          ? formatSessionTime(session.check_in_time)
+                          : new Date(session.start_time_iso).toLocaleString()}
+                      </strong>
+                    </p>
+                    <p className="card-subtitle" style={{ margin: 0 }}>
+                      Exit:{" "}
+                      <strong>
+                        {session.check_out_time
+                          ? formatSessionTime(session.check_out_time)
+                          : new Date(session.end_time_iso).toLocaleString()}
+                      </strong>
+                    </p>
+                  </div>
                 </button>
               ))}
             </div>
@@ -474,6 +712,94 @@ function BookingPageContent() {
               </Card>
             )}
 
+            {!isCreatingNew && sessionStatus !== "checked_out" && (canExtendSession || showActiveExpiryReminder) ? (
+              <Card
+                title="Expiry Reminder & Extension"
+                subtitle="Get notified before slot ends and extend only if capacity allows."
+              >
+                <div className="form-grid">
+                  {typeof minutesToExpiry === "number" ? (
+                    <div className="toggle-row">
+                      <span>Time Remaining</span>
+                      <strong>{minutesToExpiry > 0 ? formatDurationMinutes(minutesToExpiry) : "Expired"}</strong>
+                    </div>
+                  ) : null}
+
+                  {showActiveExpiryReminder ? (
+                    <div className="glass-card" style={{ padding: "0.8rem", border: "1px solid #f59e0b" }}>
+                      <p className="card-subtitle" style={{ margin: 0, color: "#92400e", fontWeight: 600 }}>
+                        Your booking is ending in ~10 minutes. Ready to move or extend now?
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {canExtendSession ? (
+                    <>
+                      <label>
+                        <span className="card-subtitle">Extend By (minutes)</span>
+                        <select
+                          className="select"
+                          value={String(extendMinutes)}
+                          onChange={(event) => {
+                            setExtendMinutes(Number(event.target.value));
+                            setExtensionPreview(null);
+                            setExtensionError("");
+                            setExtensionSuccess("");
+                          }}
+                        >
+                          <option value="10">10 min</option>
+                          <option value="15">15 min</option>
+                          <option value="30">30 min</option>
+                          <option value="45">45 min</option>
+                          <option value="60">60 min</option>
+                        </select>
+                      </label>
+
+                      <div className="hero-actions">
+                        <Button variant="secondary" onClick={() => void handlePreviewExtension()} isLoading={extensionBusy}>
+                          Check Extension
+                        </Button>
+                        <Button onClick={() => void handleApplyExtension()} isLoading={extensionBusy}>
+                          Extend Now
+                        </Button>
+                      </div>
+
+                      {extensionPreview ? (
+                        <div className="glass-card" style={{ padding: "0.8rem" }}>
+                          <div className="toggle-row">
+                            <span>Requested Until</span>
+                            <strong>{new Date(extensionPreview.requestedEndMs).toLocaleTimeString()}</strong>
+                          </div>
+                          <div className="toggle-row">
+                            <span>Available Until</span>
+                            <strong>{new Date(extensionPreview.allowedEndMs).toLocaleTimeString()}</strong>
+                          </div>
+                          <div className="toggle-row">
+                            <span>Extra Charge</span>
+                            <strong>Rs {Math.round(extensionPreview.allowedExtraAmount)}</strong>
+                          </div>
+                          <p className="card-subtitle" style={{ marginTop: "0.4rem" }}>
+                            {extensionPreview.note}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {extensionSuccess ? (
+                        <p className="card-subtitle" style={{ color: "#0f766e", fontWeight: 600 }}>
+                          {extensionSuccess}
+                        </p>
+                      ) : null}
+                      {extensionError ? (
+                        <p className="card-subtitle" style={{ color: "#b91c1c", fontWeight: 600 }}>
+                          {extensionError}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              </Card>
+            ) : null}
+
             {shouldShowActiveOtp ? (
               <Card title="Active OTP">
                 <div className="form-grid">
@@ -524,11 +850,6 @@ function BookingPageContent() {
                   </p>
                 )}
 
-                <div className="hero-actions" style={{ marginTop: "0.8rem" }}>
-                  <Link href="/scan">
-                    <Button variant="ghost">Open Vendor OTP Verify</Button>
-                  </Link>
-                </div>
               </Card>
             )}
           </div>

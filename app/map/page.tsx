@@ -15,6 +15,7 @@ import {
   getPublicSpotAuditHistory,
   getSpots,
   subscribeToCommunitySpots,
+  type ParkingSpot,
   type CommunitySpotAudit,
   type CommunitySpotCluster,
   type PublicSpotAudit,
@@ -35,6 +36,48 @@ const DynamicParkingMap = dynamic(
     loading: () => <div className="map-shell glass-card" />,
   },
 );
+
+const DEFAULT_PUBLIC_SCHEDULE: ParkingSpot["availability_schedule"] = {
+  monday: { open: "00:00", close: "23:59" },
+  tuesday: { open: "00:00", close: "23:59" },
+  wednesday: { open: "00:00", close: "23:59" },
+  thursday: { open: "00:00", close: "23:59" },
+  friday: { open: "00:00", close: "23:59" },
+  saturday: { open: "00:00", close: "23:59" },
+  sunday: { open: "00:00", close: "23:59" },
+};
+
+function toCommunityPublicSpot(cluster: CommunitySpotCluster & { id: string }): ParkingSpot & { id: string } {
+  const estimatedCapacity = Math.max(8, Math.min(80, Math.round((cluster.estimated_yards ?? 120) / 4)));
+  const latestAuditSaysFull = cluster.latest_audit_status === "full";
+  const reliabilityScore = Math.max(45, Math.min(99, cluster.reliability_score || 0));
+  const tag = cluster.tag?.trim() || "Community Public Spot";
+
+  return {
+    id: `community-${cluster.id}`,
+    name: tag,
+    address: `Community-reported public parking (${cluster.location.lat.toFixed(5)}, ${cluster.location.lng.toFixed(5)})`,
+    location: cluster.location,
+    vendor_id: "community-public",
+    type: "roadside",
+    vehicle_types: ["bike", "car", "suv"],
+    pricing: {
+      flat_rate: 0,
+      hourly_rate: 0,
+    },
+    total_spots: estimatedCapacity,
+    current_occupancy: latestAuditSaysFull ? estimatedCapacity : 0,
+    status: latestAuditSaysFull ? "closed" : "open",
+    is_approved: true,
+    trust_score: reliabilityScore,
+    rating: Number((reliabilityScore / 20).toFixed(1)),
+    review_count: cluster.report_count || 0,
+    amenities: ["Public", "Community Verified"],
+    images: cluster.report_image_url ? [cluster.report_image_url] : [],
+    availability_schedule: DEFAULT_PUBLIC_SCHEDULE,
+    conflict_flag: false,
+  };
+}
 
 export default function MapPage() {
   const router = useRouter();
@@ -68,10 +111,8 @@ export default function MapPage() {
   const setIncludeClosed = useFilterStore((state) => state.setIncludeClosed);
 
   const [isSearchingDestination, setIsSearchingDestination] = useState(false);
-  const [destinationStatus, setDestinationStatus] = useState<string>(
-    "Enter a destination and load public parking nearby.",
-  );
-  const [fallbackMapsLink, setFallbackMapsLink] = useState<string>("");
+  const [spotSearchTerm, setSpotSearchTerm] = useState("");
+  const [, setDestinationStatus] = useState<string>("Enter a destination and load public parking nearby.");
   const [communitySpots, setCommunitySpots] = useState<Array<CommunitySpotCluster & { id: string }>>([]);
   const [auditingClusterId, setAuditingClusterId] = useState<string | null>(null);
   const [auditTargetClusterId, setAuditTargetClusterId] = useState<string | null>(null);
@@ -79,10 +120,9 @@ export default function MapPage() {
   const [publicAuditHistory, setPublicAuditHistory] = useState<Array<PublicSpotAudit & { id: string }>>([]);
   const [publicAuditLoading, setPublicAuditLoading] = useState(false);
   const [publicAuditError, setPublicAuditError] = useState("");
-  const [isRefreshingRoutes, setIsRefreshingRoutes] = useState(false);
 
   const rankedSpots = getRankedSpots({
-    search: "",
+    search: spotSearchTerm,
     amenities,
     maxHourlyRate,
     includeClosed,
@@ -95,9 +135,6 @@ export default function MapPage() {
   const selectedAuditSpot = useMemo(() => {
     return rankedSpots.find((spot) => spot.id === auditSpotId) ?? null;
   }, [rankedSpots, auditSpotId]);
-
-  const totalCapacity = rankedSpots.reduce((acc, spot) => acc + spot.total_spots, 0);
-  const totalOccupied = rankedSpots.reduce((acc, spot) => acc + spot.current_occupancy, 0);
 
   useEffect(() => {
     getCurrentPosition()
@@ -119,7 +156,6 @@ export default function MapPage() {
       return;
     }
 
-    setIsRefreshingRoutes(true);
     try {
       const metrics = await getRouteMetricsForSpots(
         origin,
@@ -129,8 +165,6 @@ export default function MapPage() {
       setRouteMetrics(metrics);
     } catch {
       setRouteMetrics({});
-    } finally {
-      setIsRefreshingRoutes(false);
     }
   };
 
@@ -154,7 +188,6 @@ export default function MapPage() {
 
     setIsSearchingDestination(true);
     setDestinationStatus("Searching destination and loading public parking...");
-    setFallbackMapsLink("");
 
     try {
       const destination = await geocodeDestination(searchTerm);
@@ -185,14 +218,19 @@ export default function MapPage() {
           };
         });
 
+      const nearbyCommunitySpots = communitySpots
+        .filter((cluster) => haversine(destination.location, cluster.location) <= SEARCH_RADIUS_KM)
+        .map(toCommunityPublicSpot);
+
       const mergedNearbySpots = Array.from(
         new Map(
-          [...nearbyVendorSpots, ...publicSpots].map((spot) => [spot.id, spot]),
+          [...nearbyVendorSpots, ...publicSpots, ...nearbyCommunitySpots].map((spot) => [spot.id, spot]),
         ).values(),
       );
 
-      const mergedVendorCount = mergedNearbySpots.filter((spot) => spot.vendor_id !== "google-public").length;
-      const mergedPublicCount = mergedNearbySpots.length - mergedVendorCount;
+      const mergedVendorCount = mergedNearbySpots.filter((spot) => spot.vendor_id !== "google-public" && spot.vendor_id !== "community-public").length;
+      const mergedGooglePublicCount = mergedNearbySpots.filter((spot) => spot.vendor_id === "google-public").length;
+      const mergedCommunityPublicCount = mergedNearbySpots.filter((spot) => spot.vendor_id === "community-public").length;
 
       replaceSpots(mergedNearbySpots);
       setSelectedSpotId(null);
@@ -206,7 +244,7 @@ export default function MapPage() {
       }
 
       setDestinationStatus(
-        `Found ${mergedNearbySpots.length} nearby spots (${mergedVendorCount} approved vendor + ${mergedPublicCount} public) near ${destination.formattedAddress}.`,
+        `Found ${mergedNearbySpots.length} nearby spots (${mergedVendorCount} approved vendor + ${mergedGooglePublicCount} Google public + ${mergedCommunityPublicCount} community verified) near ${destination.formattedAddress}.`,
       );
     } catch (searchError) {
       setDestinationStatus(
@@ -221,7 +259,6 @@ export default function MapPage() {
 
   const handleRouteSpot = (spot: (typeof rankedSpots)[number]) => {
     const link = getGoogleMapsDirectionsUrl(userLocation, spot.location, vehicleType);
-    setFallbackMapsLink(link);
 
     if (typeof window !== "undefined") {
       window.open(link, "_blank", "noopener,noreferrer");
@@ -339,7 +376,7 @@ export default function MapPage() {
   return (
     <div className="map-page shell">
       <section className="section">
-        <Card title="Destination Public Parking" subtitle="Google Maps + Places API, based on where you want to go.">
+        <Card>
           <div className="hero-actions">
             <Badge tone="info">Vehicle profile</Badge>
             <Button
@@ -360,25 +397,7 @@ export default function MapPage() {
             >
               SUV
             </Button>
-            <Badge tone={isRefreshingRoutes ? "warning" : "neutral"}>
-              {isRefreshingRoutes ? "Refreshing route efficiency..." : "Route efficiency active"}
-            </Badge>
-            <Badge tone="success">Visible Occupancy: {totalOccupied}/{totalCapacity || 0}</Badge>
           </div>
-
-          <p className="card-subtitle" style={{ marginTop: "0.75rem" }}>
-            {destinationStatus}
-          </p>
-
-          <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
-            Ranking order: route efficiency first, then destination distance, price, and reliability.
-          </p>
-
-          {fallbackMapsLink ? (
-            <a href={fallbackMapsLink} target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost">Open Google Maps fallback</Button>
-            </a>
-          ) : null}
         </Card>
       </section>
 
@@ -387,6 +406,8 @@ export default function MapPage() {
           <SearchBar
             value={searchTerm}
             onChange={setSearchTerm}
+            spotSearch={spotSearchTerm}
+            onSpotSearchChange={setSpotSearchTerm}
             onSearchDestination={handleDestinationSearch}
             isSearching={isSearchingDestination}
           />
@@ -423,7 +444,7 @@ export default function MapPage() {
           {isGoogleLoaded ? (
             <DynamicParkingMap
               spots={rankedSpots}
-              communitySpots={communitySpots}
+              communitySpots={communitySpots.filter((cluster) => !rankedSpots.some((spot) => spot.id === `community-${cluster.id}`))}
               destination={destinationLocation}
               selectedSpotId={selectedSpot?.id ?? null}
               onSelectSpot={setSelectedSpotId}

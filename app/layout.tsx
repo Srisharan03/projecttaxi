@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { JetBrains_Mono, Outfit } from "next/font/google";
-import { Footer } from "@/components/layout/Footer";
+import Link from "next/link";
 import { Navbar } from "@/components/layout/Navbar";
 import { GoogleMapsProvider } from "@/components/providers/GoogleMapsProvider";
 import { useAuthStore } from "@/store/authStore";
@@ -35,8 +35,15 @@ export default function RootLayout({
         <GoogleMapsProvider>
           <div className="site-root">
             <Navbar />
+            <Link
+              href="/admin/dashboard"
+              className="admin-portal-fab"
+              aria-label="Open admin portal"
+              title="Admin Portal"
+            >
+              A
+            </Link>
             <main>{children}</main>
-            <Footer />
           </div>
         </GoogleMapsProvider>
       </body>

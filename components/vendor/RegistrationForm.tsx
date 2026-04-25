@@ -337,7 +337,7 @@ export function RegistrationForm() {
   const [documents, setDocuments] = useState<FileList | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState("");
-  const [result, setResult] = useState<{ vendorId: string; spotIds: string[] } | null>(null);
+  const [result, setResult] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
   const canContinueToSpots = useMemo(() => {
@@ -547,7 +547,7 @@ export function RegistrationForm() {
 
     setSubmitting(true);
     setError("");
-    setSubmitStatus("Uploading files to Cloudinary...");
+    setSubmitStatus("Submitting your registration...");
     const submitStart = performance.now();
 
     debugLog("Submit started", {
@@ -580,8 +580,6 @@ export function RegistrationForm() {
         documents: documentUrls.length,
         spotImageCounts: allSpotImageUrls.map((images) => images.length),
       });
-
-      setSubmitStatus("Saving spot details with location and pricing...");
 
       const registration = await withTimeout(
         registerVendor({
@@ -624,8 +622,8 @@ export function RegistrationForm() {
 
       debugLog("Firestore save completed", registration);
 
-      setResult(registration);
-      setSubmitStatus("Registration complete. Your spot is now discoverable on the map.");
+      setResult(Boolean(registration.vendorId));
+      setSubmitStatus("Registration submitted successfully. Pending admin approval.");
       setStep("vendor");
       setState(INITIAL_STATE);
       setVendorImage(null);
@@ -635,7 +633,7 @@ export function RegistrationForm() {
     } catch (submitError) {
       console.error("[VendorRegistration] Submit failed", submitError);
       setSubmitStatus("");
-      setError(submitError instanceof Error ? submitError.message : "Unable to register vendor.");
+      setError("Submission failed. Please try again.");
     } finally {
       debugLog("Submit finished", {
         totalMs: Number((performance.now() - submitStart).toFixed(2)),
@@ -1091,8 +1089,7 @@ export function RegistrationForm() {
 
       {result ? (
         <Card title="Registration Submitted">
-          <p className="card-subtitle">Vendor ID: {result.vendorId}</p>
-          <p className="card-subtitle">Spot IDs: {result.spotIds.join(", ")}</p>
+          <p className="card-subtitle">Your registration has been sent to admin for approval.</p>
         </Card>
       ) : null}
 

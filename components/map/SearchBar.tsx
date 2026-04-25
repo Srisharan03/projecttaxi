@@ -1,6 +1,8 @@
 interface SearchBarProps {
   value: string;
   onChange: (value: string) => void;
+  spotSearch: string;
+  onSpotSearchChange: (value: string) => void;
   onSearchDestination: () => void;
   isSearching?: boolean;
 }
@@ -8,7 +10,14 @@ interface SearchBarProps {
 import { Card } from "@/components/ui";
 import { Button } from "@/components/ui";
 
-export function SearchBar({ value, onChange, onSearchDestination, isSearching = false }: SearchBarProps) {
+export function SearchBar({
+  value,
+  onChange,
+  spotSearch,
+  onSpotSearchChange,
+  onSearchDestination,
+  isSearching = false,
+}: SearchBarProps) {
   const canSearch = value.trim().length > 0;
 
   return (
@@ -29,6 +38,13 @@ export function SearchBar({ value, onChange, onSearchDestination, isSearching = 
         <Button onClick={onSearchDestination} disabled={!canSearch} isLoading={isSearching}>
           Find Public Parking Near Destination
         </Button>
+
+        <input
+          className="input"
+          placeholder="Filter nearby spots by name or address..."
+          value={spotSearch}
+          onChange={(event) => onSpotSearchChange(event.target.value)}
+        />
       </div>
     </Card>
   );

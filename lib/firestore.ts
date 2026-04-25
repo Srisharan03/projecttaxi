@@ -85,6 +85,16 @@ export interface Vendor {
   created_at?: unknown;
 }
 
+export interface UserProfile {
+  id?: string;
+  name: string;
+  email: string;
+  phone: string;
+  profile_image?: string;
+  created_at?: unknown;
+  updated_at?: unknown;
+}
+
 export interface Session {
   id?: string;
   access_code: string;
@@ -122,6 +132,19 @@ export interface ProcessSessionOtpResult {
   finalAmount: number;
   extraAmount: number;
   overtimeMinutes: number;
+}
+
+export interface SessionExtensionPreview {
+  possible: boolean;
+  requestedEndMs: number;
+  allowedEndMs: number;
+  currentEndMs: number;
+  requestedExtraMinutes: number;
+  allowedExtraMinutes: number;
+  requestedExtraAmount: number;
+  allowedExtraAmount: number;
+  conflictAtMs: number | null;
+  note: string;
 }
 
 export interface Audit {
@@ -187,6 +210,8 @@ export interface CommunitySpotCluster {
   id?: string;
   location: LatLng;
   tag: string;
+  estimated_yards?: number;
+  report_image_url?: string;
   report_count: number;
   report_user_ids: string[];
   is_verified: boolean;
@@ -228,6 +253,8 @@ export interface ReportCommunitySpotPayload {
   user_id: string;
   location: LatLng;
   tag?: string;
+  estimated_yards?: number;
+  report_image_url?: string;
 }
 
 function calculateCommunityReliabilityScore(
@@ -247,6 +274,100 @@ function intervalsOverlap(
   rightEndMs: number,
 ): boolean {
   return leftStartMs < rightEndMs && rightStartMs < leftEndMs;
+}
+
+function calculateExtensionAmount(hourlyRate: number, extraMinutes: number): number {
+  return Number((hourlyRate * (extraMinutes / 60)).toFixed(2));
+}
+
+function parseIsoOrMs(iso: string | undefined, ms: number | undefined): number {
+  if (typeof ms === "number" && Number.isFinite(ms)) {
+    return ms;
+  }
+
+  if (iso) {
+    const parsed = new Date(iso).getTime();
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function getMaxExtendableEndMs(
+  totalSpots: number,
+  currentEndMs: number,
+  requestedEndMs: number,
+  otherSessions: Session[],
+): { allowedEndMs: number; conflictAtMs: number | null } {
+  if (requestedEndMs <= currentEndMs) {
+    return { allowedEndMs: currentEndMs, conflictAtMs: null };
+  }
+
+  const maxOthersAllowed = Math.max(totalSpots, 1) - 1;
+  const rangeSessions = otherSessions.filter((session) => {
+    const startMs = parseIsoOrMs(session.start_time_iso, session.start_time_ms);
+    const endMs = parseIsoOrMs(session.end_time_iso, session.end_time_ms);
+    if (endMs <= currentEndMs || startMs >= requestedEndMs) {
+      return false;
+    }
+
+    return true;
+  });
+
+  let currentOtherCount = rangeSessions.filter((session) => {
+    const startMs = parseIsoOrMs(session.start_time_iso, session.start_time_ms);
+    const endMs = parseIsoOrMs(session.end_time_iso, session.end_time_ms);
+    return startMs < currentEndMs && endMs > currentEndMs;
+  }).length;
+
+  if (currentOtherCount > maxOthersAllowed) {
+    return { allowedEndMs: currentEndMs, conflictAtMs: currentEndMs };
+  }
+
+  type Event = { timeMs: number; delta: number };
+  const events: Event[] = [];
+  rangeSessions.forEach((session) => {
+    const startMs = Math.max(parseIsoOrMs(session.start_time_iso, session.start_time_ms), currentEndMs);
+    const endMs = Math.min(parseIsoOrMs(session.end_time_iso, session.end_time_ms), requestedEndMs);
+    if (endMs <= currentEndMs || endMs <= startMs) {
+      return;
+    }
+
+    events.push({ timeMs: startMs, delta: 1 });
+    events.push({ timeMs: endMs, delta: -1 });
+  });
+
+  events.sort((left, right) => {
+    if (left.timeMs !== right.timeMs) {
+      return left.timeMs - right.timeMs;
+    }
+
+    return left.delta - right.delta; // End(-1) before start(+1) to honor [start,end) slots
+  });
+
+  let index = 0;
+  let cursor = currentEndMs;
+  while (index < events.length) {
+    const eventTime = events[index].timeMs;
+    if (eventTime > cursor && currentOtherCount > maxOthersAllowed) {
+      return { allowedEndMs: cursor, conflictAtMs: cursor };
+    }
+
+    cursor = eventTime;
+
+    while (index < events.length && events[index].timeMs === eventTime) {
+      currentOtherCount += events[index].delta;
+      index += 1;
+    }
+
+    if (currentOtherCount > maxOthersAllowed) {
+      return { allowedEndMs: eventTime, conflictAtMs: eventTime };
+    }
+  }
+
+  return { allowedEndMs: requestedEndMs, conflictAtMs: null };
 }
 
 export async function addSpot(
@@ -406,6 +527,33 @@ export async function getVendors(): Promise<Array<Vendor & { id: string }>> {
   return snapshot.docs.map((vendorDoc) => withId(vendorDoc.id, vendorDoc.data() as Vendor));
 }
 
+export async function getVendorByEmail(email: string): Promise<(Vendor & { id: string }) | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const exactSnapshot = await getDocs(
+    query(collection(db, "vendors"), where("email", "==", email.trim()), limit(1)),
+  );
+  if (!exactSnapshot.empty) {
+    const top = exactSnapshot.docs[0];
+    return withId(top.id, top.data() as Vendor);
+  }
+
+  const fallbackSnapshot = await getDocs(collection(db, "vendors"));
+  const matched = fallbackSnapshot.docs.find((docSnap) => {
+    const vendor = docSnap.data() as Vendor;
+    return (vendor.email || "").trim().toLowerCase() === normalizedEmail;
+  });
+
+  if (!matched) {
+    return null;
+  }
+
+  return withId(matched.id, matched.data() as Vendor);
+}
+
 export async function getVendorById(vendorId: string): Promise<(Vendor & { id: string }) | null> {
   const snapshot = await getDoc(doc(db, "vendors", vendorId));
   if (!snapshot.exists()) {
@@ -435,6 +583,27 @@ export async function approveVendor(vendorId: string, spotIds: string[]): Promis
 export async function rejectVendor(vendorId: string): Promise<void> {
   await updateDoc(doc(db, "vendors", vendorId), {
     status: "rejected",
+  });
+}
+
+export async function updateVendorProfile(
+  vendorId: string,
+  payload: Pick<Vendor, "name" | "email" | "phone"> & { profile_image?: string },
+): Promise<void> {
+  const normalizedName = payload.name.trim();
+  const normalizedEmail = payload.email.trim();
+  const normalizedPhone = payload.phone.trim();
+
+  if (!normalizedName || !normalizedEmail || !normalizedPhone) {
+    throw new Error("Name, email, and phone are required.");
+  }
+
+  await updateDoc(doc(db, "vendors", vendorId), {
+    name: normalizedName,
+    email: normalizedEmail,
+    phone: normalizedPhone,
+    profile_image: payload.profile_image?.trim() || "",
+    updated_at: serverTimestamp(),
   });
 }
 
@@ -535,6 +704,163 @@ export async function createSession(payload: CreateSessionPayload): Promise<stri
   });
 
   return sessionRef.id;
+}
+
+export async function previewSessionExtension(
+  sessionId: string,
+  requestedEndMs: number,
+): Promise<SessionExtensionPreview> {
+  const sessionSnapshot = await getDoc(doc(db, "sessions", sessionId));
+  if (!sessionSnapshot.exists()) {
+    throw new Error("Session not found.");
+  }
+
+  const session = withId(sessionSnapshot.id, sessionSnapshot.data() as Session);
+  if ((session.approval_status ?? "accepted") !== "accepted") {
+    throw new Error("Only accepted bookings can be extended.");
+  }
+  if (!(session.status === "booked" || session.status === "checked_in")) {
+    throw new Error("Only active bookings can be extended.");
+  }
+
+  const currentEndMs = parseIsoOrMs(session.end_time_iso, session.end_time_ms);
+  if (requestedEndMs <= currentEndMs) {
+    throw new Error("Extended end time must be after current end time.");
+  }
+
+  const [spotSnapshot, activeSessionsSnap] = await Promise.all([
+    getDoc(doc(db, "parking_spots", session.spot_id)),
+    getDocs(
+      query(
+        collection(db, "sessions"),
+        where("spot_id", "==", session.spot_id),
+        where("status", "in", ["booked", "checked_in"]),
+      ),
+    ),
+  ]);
+
+  if (!spotSnapshot.exists()) {
+    throw new Error("Parking spot not found.");
+  }
+
+  const spot = spotSnapshot.data() as ParkingSpot;
+  const otherSessions = activeSessionsSnap.docs
+    .filter((docSnap) => docSnap.id !== session.id)
+    .map((docSnap) => docSnap.data() as Session)
+    .filter((candidate) => candidate.approval_status !== "rejected");
+  const hasAnyFutureBooking = otherSessions.some((candidate) => {
+    const startMs = parseIsoOrMs(candidate.start_time_iso, candidate.start_time_ms);
+    return startMs >= currentEndMs;
+  });
+
+  const { allowedEndMs, conflictAtMs } = getMaxExtendableEndMs(
+    spot.total_spots,
+    currentEndMs,
+    requestedEndMs,
+    otherSessions,
+  );
+
+  const requestedExtraMinutes = Math.max(0, Math.ceil((requestedEndMs - currentEndMs) / (60 * 1000)));
+  const allowedExtraMinutes = Math.max(0, Math.ceil((allowedEndMs - currentEndMs) / (60 * 1000)));
+  const requestedExtraAmount = calculateExtensionAmount(spot.pricing.hourly_rate, requestedExtraMinutes);
+  const allowedExtraAmount = calculateExtensionAmount(spot.pricing.hourly_rate, allowedExtraMinutes);
+
+  if (allowedExtraMinutes <= 0) {
+    return {
+      possible: false,
+      requestedEndMs,
+      allowedEndMs: currentEndMs,
+      currentEndMs,
+      requestedExtraMinutes,
+      allowedExtraMinutes: 0,
+      requestedExtraAmount,
+      allowedExtraAmount: 0,
+      conflictAtMs,
+      note: "Extension is not possible. Slot is already occupied for your requested range.",
+    };
+  }
+
+  if (allowedEndMs < requestedEndMs) {
+    return {
+      possible: true,
+      requestedEndMs,
+      allowedEndMs,
+      currentEndMs,
+      requestedExtraMinutes,
+      allowedExtraMinutes,
+      requestedExtraAmount,
+      allowedExtraAmount,
+      conflictAtMs,
+      note: "Partial extension available until the next booking starts.",
+    };
+  }
+
+  return {
+    possible: true,
+    requestedEndMs,
+    allowedEndMs,
+    currentEndMs,
+    requestedExtraMinutes,
+    allowedExtraMinutes,
+    requestedExtraAmount,
+    allowedExtraAmount,
+    conflictAtMs: null,
+    note: hasAnyFutureBooking
+      ? "Requested extension is fully available."
+      : "No future bookings found for this slot. You can extend further if needed.",
+  };
+}
+
+export async function extendSession(
+  sessionId: string,
+  requestedEndMs: number,
+): Promise<SessionExtensionPreview> {
+  const sessionRef = doc(db, "sessions", sessionId);
+  const preview = await previewSessionExtension(sessionId, requestedEndMs);
+  if (!preview.possible || preview.allowedExtraMinutes <= 0) {
+    throw new Error("No extendable slot is available for this booking.");
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const sessionSnap = await transaction.get(sessionRef);
+    if (!sessionSnap.exists()) {
+      throw new Error("Session not found.");
+    }
+
+    const current = sessionSnap.data() as Session;
+    if ((current.approval_status ?? "accepted") !== "accepted") {
+      throw new Error("Only accepted bookings can be extended.");
+    }
+    if (!(current.status === "booked" || current.status === "checked_in")) {
+      throw new Error("Only active bookings can be extended.");
+    }
+
+    const currentEndMs = parseIsoOrMs(current.end_time_iso, current.end_time_ms);
+    if (currentEndMs !== preview.currentEndMs) {
+      throw new Error("Booking changed recently. Please check extension again.");
+    }
+
+    const durationMinutes = Math.max(
+      1,
+      Math.ceil((preview.allowedEndMs - parseIsoOrMs(current.start_time_iso, current.start_time_ms)) / (60 * 1000)),
+    );
+
+    transaction.update(sessionRef, {
+      end_time_ms: preview.allowedEndMs,
+      end_time_iso: new Date(preview.allowedEndMs).toISOString(),
+      duration_minutes: durationMinutes,
+      amount: Number(((current.amount || 0) + preview.allowedExtraAmount).toFixed(2)),
+      updated_at: serverTimestamp(),
+    });
+  });
+
+  return {
+    ...preview,
+    note:
+      preview.allowedEndMs < preview.requestedEndMs
+        ? "Partial extension applied until the next booking starts."
+        : "Extension applied successfully.",
+  };
 }
 
 export async function checkIn(
@@ -1145,6 +1471,14 @@ export async function reportCommunitySpot(
   payload: ReportCommunitySpotPayload,
 ): Promise<{ clusterId: string; reportCount: number; isVerified: boolean }> {
   const normalizedUserId = payload.user_id.trim();
+  const normalizedEstimatedYards =
+    typeof payload.estimated_yards === "number" && Number.isFinite(payload.estimated_yards) && payload.estimated_yards > 0
+      ? Number(payload.estimated_yards.toFixed(1))
+      : undefined;
+  const normalizedReportImageUrl =
+    typeof payload.report_image_url === "string" && payload.report_image_url.trim()
+      ? payload.report_image_url.trim()
+      : undefined;
   if (!normalizedUserId) {
     throw new Error("User ID is required to report community spot.");
   }
@@ -1159,6 +1493,8 @@ export async function reportCommunitySpot(
     const createdRef = await addDoc(collection(db, "community_spot_clusters"), {
       location: payload.location,
       tag: (payload.tag || "Community Public Spot").trim(),
+      estimated_yards: normalizedEstimatedYards,
+      report_image_url: normalizedReportImageUrl,
       report_count: reportCount,
       report_user_ids: [normalizedUserId],
       is_verified: false,
@@ -1208,6 +1544,8 @@ export async function reportCommunitySpot(
       is_verified: nextIsVerified,
       verified_at: nextIsVerified ? serverTimestamp() : cluster.verified_at ?? null,
       tag: payload.tag?.trim() || cluster.tag || "Community Public Spot",
+      estimated_yards: normalizedEstimatedYards ?? cluster.estimated_yards ?? null,
+      report_image_url: normalizedReportImageUrl ?? cluster.report_image_url ?? null,
       reliability_score: calculateCommunityReliabilityScore(
         nextReportCount,
         nextAuditPositive,
@@ -1401,6 +1739,50 @@ export function subscribeToCommunitySpots(
       console.error("[Firestore] Community spot subscription failed", error);
       onError?.(error as Error);
     },
+  );
+}
+
+export async function getUserProfile(userId: string): Promise<(UserProfile & { id: string }) | null> {
+  const trimmedId = userId.trim();
+  if (!trimmedId) {
+    return null;
+  }
+
+  const snapshot = await getDoc(doc(db, "users", trimmedId));
+  if (!snapshot.exists()) {
+    return null;
+  }
+
+  return withId(snapshot.id, snapshot.data() as UserProfile);
+}
+
+export async function upsertUserProfile(
+  userId: string,
+  payload: Pick<UserProfile, "name" | "email" | "phone"> & { profile_image?: string },
+): Promise<void> {
+  const trimmedId = userId.trim();
+  if (!trimmedId) {
+    throw new Error("User ID is required.");
+  }
+
+  const normalizedName = payload.name.trim();
+  const normalizedEmail = payload.email.trim();
+  const normalizedPhone = payload.phone.trim();
+  if (!normalizedName || !normalizedEmail || !normalizedPhone) {
+    throw new Error("Name, email, and phone are required.");
+  }
+
+  await setDoc(
+    doc(db, "users", trimmedId),
+    {
+      name: normalizedName,
+      email: normalizedEmail,
+      phone: normalizedPhone,
+      profile_image: payload.profile_image?.trim() || "",
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    },
+    { merge: true },
   );
 }
 
