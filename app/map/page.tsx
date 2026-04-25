@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card } from "@/components/ui";
 import { FilterPanel } from "@/components/map/FilterPanel";
@@ -79,6 +79,14 @@ function toCommunityPublicSpot(cluster: CommunitySpotCluster & { id: string }): 
   };
 }
 
+function isSameLocation(
+  left: { lat: number; lng: number },
+  right: { lat: number; lng: number },
+  precision = 0.000001,
+): boolean {
+  return Math.abs(left.lat - right.lat) <= precision && Math.abs(left.lng - right.lng) <= precision;
+}
+
 export default function MapPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
@@ -120,6 +128,7 @@ export default function MapPage() {
   const [publicAuditHistory, setPublicAuditHistory] = useState<Array<PublicSpotAudit & { id: string }>>([]);
   const [publicAuditLoading, setPublicAuditLoading] = useState(false);
   const [publicAuditError, setPublicAuditError] = useState("");
+  const hasSyncedInitialLocation = useRef(false);
 
   const rankedSpots = getRankedSpots({
     search: spotSearchTerm,
@@ -137,14 +146,24 @@ export default function MapPage() {
   }, [rankedSpots, auditSpotId]);
 
   useEffect(() => {
+    if (hasSyncedInitialLocation.current) {
+      return;
+    }
+
     getCurrentPosition()
       .then((coords) => {
+        hasSyncedInitialLocation.current = true;
+        // On first load, keep destination aligned with live user location instead of fallback center.
+        if (isSameLocation(destinationLocation, userLocation)) {
+          setDestinationLocation(coords);
+        }
         setUserLocation(coords);
       })
       .catch(() => {
+        hasSyncedInitialLocation.current = true;
         // Keep fallback location when user does not grant GPS permission.
       });
-  }, [setUserLocation]);
+  }, [destinationLocation, setDestinationLocation, setUserLocation, userLocation]);
 
   const refreshRouteEfficiency = async (
     spotsToEvaluate: Array<{ id: string; location: { lat: number; lng: number } }>,
@@ -244,7 +263,7 @@ export default function MapPage() {
       }
 
       setDestinationStatus(
-        `Found ${mergedNearbySpots.length} nearby spots (${mergedVendorCount} approved vendor + ${mergedGooglePublicCount} Google public + ${mergedCommunityPublicCount} community verified) near ${destination.formattedAddress}.`,
+        `Found ${mergedNearbySpots.length} nearby spots (${mergedVendorCount} approved owner + ${mergedGooglePublicCount} Google public + ${mergedCommunityPublicCount} community verified) near ${destination.formattedAddress}.`,
       );
     } catch (searchError) {
       setDestinationStatus(
@@ -375,8 +394,8 @@ export default function MapPage() {
 
   return (
     <div className="map-page shell">
-      <section className="section">
-        <Card>
+      <section className="section map-top-section">
+        <Card className="map-vehicle-card">
           <div className="hero-actions">
             <Badge tone="info">Vehicle profile</Badge>
             <Button
@@ -402,7 +421,7 @@ export default function MapPage() {
       </section>
 
       <section className="map-grid">
-        <aside className="form-grid">
+        <aside className="form-grid map-sidebar">
           <SearchBar
             value={searchTerm}
             onChange={setSearchTerm}
@@ -440,7 +459,7 @@ export default function MapPage() {
           />
         </aside>
 
-        <div>
+        <div className="map-canvas-wrap">
           {isGoogleLoaded ? (
             <DynamicParkingMap
               spots={rankedSpots}

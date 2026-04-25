@@ -257,12 +257,14 @@ export interface ReportCommunitySpotPayload {
   report_image_url?: string;
 }
 
+const COMMUNITY_REPORTS_REQUIRED = 4;
+
 function calculateCommunityReliabilityScore(
   reportCount: number,
   auditPositiveCount: number,
   auditTotalCount: number,
 ): number {
-  const reportSignal = Math.min(reportCount / 7, 1) * 70;
+  const reportSignal = Math.min(reportCount / COMMUNITY_REPORTS_REQUIRED, 1) * 70;
   const auditSignal = auditTotalCount > 0 ? (auditPositiveCount / auditTotalCount) * 30 : 0;
   return Math.round(reportSignal + auditSignal);
 }
@@ -1534,7 +1536,7 @@ export async function reportCommunitySpot(
     }
 
     const nextReportCount = userIds.length + 1;
-    const nextIsVerified = nextReportCount >= 7;
+    const nextIsVerified = nextReportCount >= COMMUNITY_REPORTS_REQUIRED;
     const nextAuditTotal = cluster.audit_total_count ?? 0;
     const nextAuditPositive = cluster.audit_positive_count ?? 0;
 

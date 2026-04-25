@@ -1,10 +1,13 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/ui";
 import { loginWithEmail, registerWithEmail } from "@/lib/auth";
 import { useAuthStore } from "@/store/authStore";
+import "@/styles/auth.css";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -34,7 +37,6 @@ export default function UserAuthPage() {
         await loginWithEmail(email, password);
       } else {
         await registerWithEmail(email, password);
-        // In a real app, we would save the name and vehicle type to Firestore here
       }
       setRole("user");
       router.push("/map");
@@ -46,60 +48,88 @@ export default function UserAuthPage() {
   };
 
   return (
-    <div className="shell" style={{ maxWidth: "450px", margin: "4rem auto" }}>
-      <Card title={isLogin ? "User Login" : "User Signup"} subtitle="Access the parking marketplace.">
-        <form onSubmit={handleSubmit} className="form-grid">
-          {!isLogin && (
-            <label>
-              <span className="card-subtitle">Full Name</span>
-              <input 
-                className="input" 
-                type="text" 
-                value={name} 
-                onChange={(e) => setName(e.target.value)} 
-                required 
+    <div className="auth-page shell">
+      <div className="auth-form-wrap">
+        <aside className="auth-form-side">
+          <div>
+            <Badge tone="info">DRIVER ACCESS</Badge>
+            <h2>{isLogin ? "Welcome back." : "Create your driver account."}</h2>
+            <p>
+              Keep your parking flow simple: authenticate, open map, choose spot, and continue quickly.
+            </p>
+            <div className="auth-checklist">
+              <article className="auth-checkitem"><span className="auth-checkdot" />Realtime spot discovery</article>
+              <article className="auth-checkitem"><span className="auth-checkdot" />Quick booking actions</article>
+              <article className="auth-checkitem"><span className="auth-checkdot" />Clear status and session flow</article>
+            </div>
+          </div>
+          <Image src="/car-mini.svg" alt="Driver login visual" width={420} height={220} />
+        </aside>
+
+        <Card
+          className="auth-main-card"
+          title={isLogin ? "Driver Sign In" : "Driver Sign Up"}
+          subtitle="Use email and password to continue."
+        >
+          <form onSubmit={handleSubmit} className="form-grid">
+            {!isLogin ? (
+              <label className="auth-field">
+                <span className="card-subtitle">Full Name</span>
+                <input
+                  className="input"
+                  type="text"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                />
+              </label>
+            ) : null}
+
+            <label className="auth-field">
+              <span className="card-subtitle">Email Address</span>
+              <input
+                className="input"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
               />
             </label>
-          )}
-          <label>
-            <span className="card-subtitle">Email Address</span>
-            <input 
-              className="input" 
-              type="email" 
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
-              required 
-            />
-          </label>
-          <label>
-            <span className="card-subtitle">Password</span>
-            <input 
-              className="input" 
-              type="password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              required 
-            />
-          </label>
 
-          {error && <p style={{ color: "var(--text-danger)", fontSize: "0.9rem" }}>{error}</p>}
+            <label className="auth-field">
+              <span className="card-subtitle">Password</span>
+              <input
+                className="input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </label>
 
-          <Button type="submit" isLoading={loading} style={{ width: "100%", marginTop: "1rem" }}>
-            {isLogin ? "Sign In" : "Create Account"}
-          </Button>
+            {error ? <p className="auth-error">{error}</p> : null}
 
-          <p style={{ textAlign: "center", marginTop: "1rem", fontSize: "0.9rem" }}>
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button 
-              type="button" 
-              onClick={() => setIsLogin(!isLogin)}
-              style={{ color: "var(--text-primary)", fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: 0 }}
-            >
-              {isLogin ? "Sign Up" : "Log In"}
-            </button>
-          </p>
-        </form>
-      </Card>
+            <Button type="submit" size="lg" isLoading={loading} style={{ width: "100%" }}>
+              {isLogin ? "Sign In" : "Create Account"}
+            </Button>
+
+            <div className="auth-switch-row">
+              <span>{isLogin ? "Need an account?" : "Already have an account?"}</span>
+              <button
+                type="button"
+                className="auth-switch-btn"
+                onClick={() => setIsLogin((value) => !value)}
+              >
+                {isLogin ? "Sign Up" : "Log In"}
+              </button>
+            </div>
+
+            <Link href="/auth" className="auth-role-back">
+              <Button type="button" variant="ghost" size="sm">Back to role selection</Button>
+            </Link>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -134,7 +134,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
       setMessage(
         result.isVerified
           ? `Report submitted. Spot verified with ${result.reportCount} unique reports.`
-          : `Report submitted. Pending verification (${result.reportCount}/7 reports).`,
+          : `Report submitted. Pending verification (${result.reportCount}/4 reports).`,
       );
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to submit report.");
@@ -154,7 +154,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
     >
       <div className="community-report-wrap">
         <div className="community-report-banner">
-          <p className="community-report-banner-title">Community verification activates at 7 unique reports</p>
+          <p className="community-report-banner-title">Community verification activates at 4 unique reports</p>
           <div className="community-report-badges">
             <span className="community-chip">Cluster Radius: 20m</span>
             <span className={`community-chip ${gpsReady ? "community-chip-success" : "community-chip-muted"}`}>
@@ -164,7 +164,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
         </div>
 
         <div className="form-grid">
-          <label>
+          <label className="community-field">
             <span className="card-subtitle">Public Spot Tag</span>
             <input
               className="input"
@@ -174,7 +174,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
             />
           </label>
 
-          <label>
+          <label className="community-field">
             <span className="card-subtitle">Yards (estimated)</span>
             <input
               className="input"
@@ -187,7 +187,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
             />
           </label>
 
-          <label>
+          <label className="community-field">
             <span className="card-subtitle">Upload or Take Image</span>
             <input
               className="input"
@@ -223,7 +223,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
           </label>
 
           <div className="community-coords-grid">
-            <label>
+            <label className="community-field">
               <span className="card-subtitle">Latitude</span>
               <input
                 className="input"
@@ -232,7 +232,7 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
                 placeholder="17.385000"
               />
             </label>
-            <label>
+            <label className="community-field">
               <span className="card-subtitle">Longitude</span>
               <input
                 className="input"
@@ -252,8 +252,10 @@ export function ReportPublicSpotModal({ open, onClose, userId }: ReportPublicSpo
             </Button>
           </div>
 
-          {message ? <p className="community-status community-status-success">{message}</p> : null}
-          {error ? <p className="community-status community-status-error">{error}</p> : null}
+          <div className="community-feedback-stack">
+            {message ? <p className="community-status community-status-success">{message}</p> : null}
+            {error ? <p className="community-status community-status-error">{error}</p> : null}
+          </div>
         </div>
       </div>
     </Modal>

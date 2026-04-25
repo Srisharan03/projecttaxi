@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import Image from "next/image";
 import { Badge, Button, Modal } from "@/components/ui";
 import type { ParkingSpot, Vendor } from "@/lib/firestore";
@@ -53,7 +53,7 @@ export function ApprovalModal({
       <Modal
         open={open}
         onClose={onClose}
-        title={vendor ? `Review ${vendor.name}` : "Vendor Review"}
+        title={vendor ? `Review ${vendor.name}` : "Owner Review"}
         description="Inspect full registration details and approve listing visibility."
         footer={
           vendor ? (
@@ -68,21 +68,21 @@ export function ApprovalModal({
       >
         {vendor ? (
           <div className="form-grid">
-            <div className="hero-actions">
+            <div className="admin-approval-badges">
               <Badge tone={vendor.status === "approved" ? "success" : "warning"}>{vendor.status}</Badge>
               <Badge tone="info">Spots: {spots.length}</Badge>
               <Badge tone="neutral">Fee: {Math.round(vendor.platform_fee_rate * 100)}%</Badge>
             </div>
 
-            <div className="glass-card" style={{ padding: "0.75rem" }}>
-              <p className="card-subtitle" style={{ marginBottom: "0.4rem" }}><strong>Vendor Details</strong></p>
+            <div className="glass-card admin-approval-panel">
+              <p className="card-subtitle admin-approval-heading"><strong>Owner Details</strong></p>
               <div className="toggle-row"><span>Name</span><strong>{vendor.name}</strong></div>
               <div className="toggle-row"><span>Email</span><strong>{vendor.email}</strong></div>
               <div className="toggle-row"><span>Phone</span><strong>{vendor.phone}</strong></div>
               <div className="toggle-row"><span>Revenue earned</span><strong>{vendor.revenue_earned ?? 0}</strong></div>
               {vendor.profile_image ? (
-                <div className="hero-actions" style={{ marginTop: "0.5rem" }}>
-                  <Button size="sm" variant="ghost" onClick={() => openAsset("Vendor Profile Image", vendor.profile_image || "")}>
+                <div className="admin-approval-actions">
+                  <Button size="sm" variant="ghost" onClick={() => openAsset("Owner Profile Image", vendor.profile_image || "")}>
                     View Profile Image
                   </Button>
                 </div>
@@ -90,9 +90,9 @@ export function ApprovalModal({
                 <p className="card-subtitle">Profile image: Not provided</p>
               )}
               {vendor.documents?.length ? (
-                <div className="form-grid" style={{ marginTop: "0.5rem" }}>
+                <div className="form-grid">
                   <p className="card-subtitle"><strong>Documents</strong></p>
-                  <div className="hero-actions">
+                  <div className="admin-approval-actions">
                     {vendor.documents.map((url, index) => (
                       <Button
                         key={`${url}-${index}`}
@@ -113,8 +113,8 @@ export function ApprovalModal({
             <div className="form-grid">
               <span className="card-subtitle"><strong>Submitted Spots</strong></span>
               {spots.map((spot) => (
-                <div key={spot.id} className="glass-card" style={{ padding: "0.75rem", display: "grid", gap: "0.45rem" }}>
-                  <div className="hero-actions">
+                <div key={spot.id} className="glass-card admin-spot-review-card">
+                  <div className="admin-approval-badges">
                     <Badge tone="info">{spot.type}</Badge>
                     <Badge tone={spot.is_approved ? "success" : "warning"}>{spot.is_approved ? "Approved" : "Pending"}</Badge>
                     <Badge tone={spot.status === "open" ? "success" : "neutral"}>{spot.status}</Badge>
@@ -130,7 +130,7 @@ export function ApprovalModal({
                   <div className="toggle-row"><span>Current Occupancy</span><strong>{spot.current_occupancy}</strong></div>
                   <div className="toggle-row">
                     <span>Pricing</span>
-                    <strong>Flat ₹{spot.pricing.flat_rate} | Hourly ₹{spot.pricing.hourly_rate}</strong>
+                    <strong>Flat Rs {spot.pricing.flat_rate} | Hourly Rs {spot.pricing.hourly_rate}</strong>
                   </div>
                   <div className="toggle-row"><span>Amenities</span><strong>{spot.amenities.join(", ") || "N/A"}</strong></div>
                   <div className="toggle-row">
@@ -146,7 +146,7 @@ export function ApprovalModal({
                   <div className="form-grid">
                     <p className="card-subtitle"><strong>Spot Images</strong></p>
                     {spot.images?.length ? (
-                      <div className="hero-actions">
+                      <div className="admin-approval-actions">
                         {spot.images.map((url, index) => (
                           <Button
                             key={`${spot.id}-image-${index}`}
@@ -164,7 +164,7 @@ export function ApprovalModal({
                   </div>
                 </div>
               ))}
-              {!spots.length ? <p className="card-subtitle">No spots attached to this vendor.</p> : null}
+              {!spots.length ? <p className="card-subtitle">No spots attached to this owner.</p> : null}
             </div>
           </div>
         ) : null}
@@ -182,7 +182,7 @@ export function ApprovalModal({
             width={900}
             height={520}
             unoptimized
-            style={{ width: "100%", height: "auto", borderRadius: "12px", objectFit: "cover" }}
+            className="admin-proof-image"
           />
         ) : (
           <p className="card-subtitle">No preview available.</p>

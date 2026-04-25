@@ -40,15 +40,20 @@ export function SpotCard({
   const previewImage = spot.images?.[0] ?? "";
   const isPublicSpot = spot.vendor_id === "google-public" || spot.vendor_id === "community-public";
   const showProofButton = Boolean(previewImage);
+  const handleCardAction =
+    (callback: () => void) => (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      callback();
+    };
 
   return (
     <Card
-      className={`${selected ? "spot-card-selected" : ""} ${isPublicSpot ? "spot-card-public" : "spot-card-vendor"}`}
+      className={`spot-card ${selected ? "spot-card-selected" : ""} ${isPublicSpot ? "spot-card-public" : "spot-card-vendor"}`}
       title={spot.name}
       subtitle={spot.address}
       actions={
-        <div className="hero-actions">
-          <Badge tone={isPublicSpot ? "info" : "success"}>{isPublicSpot ? "Public" : "Vendor"}</Badge>
+        <div className="hero-actions spot-card-badges">
+          <Badge tone={isPublicSpot ? "info" : "success"}>{isPublicSpot ? "Public" : "Owner"}</Badge>
           <Badge tone={spot.status === "open" ? "success" : "neutral"}>{spot.status}</Badge>
         </div>
       }
@@ -78,6 +83,9 @@ export function SpotCard({
           <div className="spot-card-label">To Destination</div>
           <div className="spot-card-value">{formatDistanceKm(spot.destinationDistanceKm)}</div>
         </div>
+      </div>
+
+      <div className="spot-card-meta-row">
         {!isPublicSpot ? (
           <div>
             <div className="spot-card-label">Occupancy</div>
@@ -90,30 +98,77 @@ export function SpotCard({
         </div>
       </div>
 
-      <div className="hero-actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-        <Button size="sm" variant="secondary" onClick={onRoute}>
-          Navigate
-        </Button>
+      <div className="spot-card-actions">
+        <div className="spot-card-quick-actions">
+          <button
+            type="button"
+            className="spot-icon-btn"
+            onClick={handleCardAction(onRoute)}
+            aria-label="Navigate"
+            title="Navigate"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 19L19 12L5 5V10L14 12L5 14V19Z" fill="currentColor" />
+            </svg>
+          </button>
+          {isPublicSpot ? (
+            <button
+              type="button"
+              className="spot-icon-btn"
+              onClick={handleCardAction(onReport)}
+              aria-label={spot.conflict_flag ? "Verify spot" : "Audit spot"}
+              title={spot.conflict_flag ? "Verify spot" : "Audit spot"}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 2L3 6V12C3 17 6.6 21.7 12 23C17.4 21.7 21 17 21 12V6L12 2ZM10.6 16.2L7.4 13L8.8 11.6L10.6 13.4L15.2 8.8L16.6 10.2L10.6 16.2Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          ) : null}
+          {showProofButton ? (
+            <button
+              type="button"
+              className="spot-icon-btn"
+              onClick={handleCardAction(() => setShowProofModal(true))}
+              aria-label="View proof"
+              title="View proof"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM8.5 9C7.7 9 7 8.3 7 7.5S7.7 6 8.5 6S10 6.7 10 7.5S9.3 9 8.5 9ZM5 19L9 14L12 18L16 13L19 19H5Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+
         {isPublicSpot ? (
-          <Button size="sm" variant="ghost" onClick={onReport}>
-            {spot.conflict_flag ? "Verify" : "Audit"}
-          </Button>
-        ) : null}
-        {showProofButton ? (
-          <Button style={{ gridColumn: "span 2" }} size="sm" variant="ghost" onClick={() => setShowProofModal(true)}>
-            View Proof
-          </Button>
-        ) : null}
-        {isPublicSpot ? (
-          <Button style={{ gridColumn: "span 2" }} onClick={onRoute} disabled={spot.status !== "open"}>
+          <Button
+            size="sm"
+            className="spot-card-primary-action"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRoute();
+            }}
+            disabled={spot.status !== "open"}
+          >
             {spot.status === "open" ? "Navigate (Public Spot)" : "Closed"}
           </Button>
         ) : (
-          <>
-            <Button style={{ gridColumn: "span 2" }} onClick={onBook} disabled={spot.status !== "open"}>
-              Book Slot
-            </Button>
-          </>
+          <Button
+            size="sm"
+            className="spot-card-primary-action"
+            onClick={(event) => {
+              event.stopPropagation();
+              onBook();
+            }}
+            disabled={spot.status !== "open"}
+          >
+            Book Slot
+          </Button>
         )}
       </div>
       <Modal

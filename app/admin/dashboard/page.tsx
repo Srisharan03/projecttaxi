@@ -80,8 +80,10 @@ export default function AdminDashboardPage() {
   const pendingCount = vendors.filter((vendor) => vendor.status === "pending").length;
   const approvedCount = vendors.filter((vendor) => vendor.status === "approved").length;
   const liveSpotsCount = spots.filter((spot) => spot.is_approved && spot.status === "open").length;
-  const pendingCommunityCount = communitySpots.filter((spot) => !spot.is_verified).length;
-  const verifiedCommunityCount = communitySpots.filter((spot) => spot.is_verified).length;
+  const pendingCommunityClusters = communitySpots.filter((cluster) => !cluster.is_verified);
+  const verifiedCommunityClusters = communitySpots.filter((cluster) => cluster.is_verified);
+  const pendingCommunityCount = pendingCommunityClusters.length;
+  const verifiedCommunityCount = verifiedCommunityClusters.length;
 
   const handleApprove = async (vendor: VendorWithId) => {
     await approveVendor(vendor.id, vendor.spots);
@@ -105,36 +107,57 @@ export default function AdminDashboardPage() {
   return (
     <div className="admin-page shell">
       <section className="section admin-grid">
-        <Card title="Admin Control" subtitle="Approve inventory and monitor platform health.">
-          <div className="hero-actions">
-            <Badge tone="warning">Pending: {pendingCount}</Badge>
-            <Badge tone="success">Approved: {approvedCount}</Badge>
-            <Badge tone="info">Live Spots: {liveSpotsCount}</Badge>
-            <Badge tone="warning">Community Pending: {pendingCommunityCount}</Badge>
-            <Badge tone="success">Community Verified: {verifiedCommunityCount}</Badge>
-            <Badge tone="neutral">Platform Revenue: {formatCurrency(platformRevenue)}</Badge>
+        <Card
+          className="admin-hero-card"
+          title="Admin Control"
+          subtitle="Approve inventory, clear pending reviews fast, and keep map quality high."
+        >
+          <div className="admin-stats-grid">
+            <article className="admin-stat-card">
+              <p className="admin-stat-label">Owner Pending</p>
+              <p className="admin-stat-value">{pendingCount}</p>
+            </article>
+            <article className="admin-stat-card">
+              <p className="admin-stat-label">Owner Approved</p>
+              <p className="admin-stat-value">{approvedCount}</p>
+            </article>
+            <article className="admin-stat-card">
+              <p className="admin-stat-label">Live Spots</p>
+              <p className="admin-stat-value">{liveSpotsCount}</p>
+            </article>
+            <article className="admin-stat-card">
+              <p className="admin-stat-label">Community Pending</p>
+              <p className="admin-stat-value">{pendingCommunityCount}</p>
+            </article>
+            <article className="admin-stat-card">
+              <p className="admin-stat-label">Community Verified</p>
+              <p className="admin-stat-value">{verifiedCommunityCount}</p>
+            </article>
+            <article className="admin-stat-card">
+              <p className="admin-stat-label">Platform Revenue</p>
+              <p className="admin-stat-value">{formatCurrency(platformRevenue)}</p>
+            </article>
           </div>
         </Card>
 
-        <Card title="Review Panels">
-          <div className="hero-actions" style={{ marginBottom: "0.75rem" }}>
-            <Button
-              variant={dashboardTab === "vendors" ? "primary" : "secondary"}
-              onClick={() => setDashboardTab("vendors")}
-            >
-              Vendor Queue
-            </Button>
-            <Button
-              variant={dashboardTab === "community" ? "primary" : "secondary"}
-              onClick={() => setDashboardTab("community")}
-            >
-              Community Spots
-            </Button>
-          </div>
-
-          {dashboardTab === "vendors" ? (
-            <div className="form-grid">
-              <div className="hero-actions" style={{ marginBottom: "0.75rem" }}>
+        <Card className="admin-review-card" title="Review Panels" subtitle="Switch queue, filter status, and process quickly.">
+          <div className="admin-controls-wrap">
+            <div className="admin-tab-row">
+              <Button
+                variant={dashboardTab === "vendors" ? "primary" : "secondary"}
+                onClick={() => setDashboardTab("vendors")}
+              >
+                Owner Queue
+              </Button>
+              <Button
+                variant={dashboardTab === "community" ? "primary" : "secondary"}
+                onClick={() => setDashboardTab("community")}
+              >
+                Community Spots
+              </Button>
+            </div>
+            {dashboardTab === "vendors" ? (
+              <div className="admin-status-filter-row">
                 <Button
                   variant={statusFilter === "pending" ? "primary" : "secondary"}
                   onClick={() => setStatusFilter("pending")}
@@ -154,25 +177,35 @@ export default function AdminDashboardPage() {
                   Rejected
                 </Button>
               </div>
+            ) : null}
+          </div>
+
+          {dashboardTab === "vendors" ? (
+            <div className="form-grid">
+              <div className="admin-vendor-summary">
+                <Badge tone={statusFilter === "pending" ? "warning" : statusFilter === "approved" ? "success" : "neutral"}>
+                  Showing: {statusFilter}
+                </Badge>
+                <Badge tone="info">Rows: {filteredVendors.length}</Badge>
+              </div>
               <VendorTable vendors={filteredVendors} onOpenVendor={setSelectedVendor} />
             </div>
           ) : (
-            <div className="form-grid">
-              <Card title="Pending Clusters" subtitle="Automatic verification at 7 unique reports.">
-                <div className="form-grid">
-                  {communitySpots.filter((cluster) => !cluster.is_verified).length ? (
-                    communitySpots
-                      .filter((cluster) => !cluster.is_verified)
-                      .map((cluster) => (
-                        <div key={cluster.id} className="glass-card" style={{ padding: "0.8rem" }}>
-                          <div className="hero-actions">
-                            <Badge tone="warning">Pending</Badge>
-                            <Badge tone="info">Reports: {cluster.report_count}</Badge>
-                            <Badge tone="neutral">Reliability: {cluster.reliability_score || 0}%</Badge>
-                          </div>
-                          <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
-                            Tag: <strong>{cluster.tag || "Community Public Spot"}</strong>
-                          </p>
+            <div className="admin-community-columns">
+              <Card title="Pending Clusters" subtitle="Automatic verification at 4 unique reports.">
+                <div className="admin-community-list">
+                  {pendingCommunityClusters.length ? (
+                    pendingCommunityClusters.map((cluster) => (
+                      <div key={cluster.id} className="glass-card admin-community-card">
+                        <div className="admin-community-badges">
+                          <Badge tone="warning">Pending</Badge>
+                          <Badge tone="info">Reports: {cluster.report_count}</Badge>
+                          <Badge tone="neutral">Reliability: {cluster.reliability_score || 0}%</Badge>
+                        </div>
+                        <p className="card-subtitle admin-community-title">
+                          Tag: <strong>{cluster.tag || "Community Public Spot"}</strong>
+                        </p>
+                        <div className="admin-community-meta">
                           <p className="card-subtitle">
                             Estimated yards: <strong>{cluster.estimated_yards ?? "N/A"}</strong>
                           </p>
@@ -181,35 +214,36 @@ export default function AdminDashboardPage() {
                           </p>
                           <p className="card-subtitle">Created by: {cluster.created_by || "N/A"}</p>
                           <p className="card-subtitle">Created at: {formatTimestamp(cluster.created_at)}</p>
-                          {cluster.report_image_url ? (
-                            <div className="hero-actions">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  setProofModal({
-                                    title: cluster.tag || "Community Public Spot",
-                                    imageUrl: cluster.report_image_url || "",
-                                  })
-                                }
-                              >
-                                View Proof Image
-                              </Button>
-                            </div>
-                          ) : (
-                            <p className="card-subtitle">Proof image: Not provided</p>
-                          )}
-                          <div className="hero-actions">
+                        </div>
+                        {cluster.report_image_url ? (
+                          <div className="admin-community-actions">
                             <Button
-                              variant="secondary"
-                              isLoading={deletingClusterId === cluster.id}
-                              onClick={() => void handleDeleteCommunitySpot(cluster.id)}
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setProofModal({
+                                  title: cluster.tag || "Community Public Spot",
+                                  imageUrl: cluster.report_image_url || "",
+                                })
+                              }
                             >
-                              Remove
+                              View Proof Image
                             </Button>
                           </div>
+                        ) : (
+                          <p className="card-subtitle">Proof image: Not provided</p>
+                        )}
+                        <div className="admin-community-actions">
+                          <Button
+                            variant="secondary"
+                            isLoading={deletingClusterId === cluster.id}
+                            onClick={() => void handleDeleteCommunitySpot(cluster.id)}
+                          >
+                            Remove
+                          </Button>
                         </div>
-                      ))
+                      </div>
+                    ))
                   ) : (
                     <p className="card-subtitle">No pending community clusters.</p>
                   )}
@@ -217,20 +251,19 @@ export default function AdminDashboardPage() {
               </Card>
 
               <Card title="Verified Spots" subtitle="Shown on map as community public spots.">
-                <div className="form-grid">
-                  {communitySpots.filter((cluster) => cluster.is_verified).length ? (
-                    communitySpots
-                      .filter((cluster) => cluster.is_verified)
-                      .map((cluster) => (
-                        <div key={cluster.id} className="glass-card" style={{ padding: "0.8rem" }}>
-                          <div className="hero-actions">
-                            <Badge tone="success">Verified</Badge>
-                            <Badge tone="info">Reports: {cluster.report_count}</Badge>
-                            <Badge tone="neutral">Reliability: {cluster.reliability_score || 0}%</Badge>
-                          </div>
-                          <p className="card-subtitle" style={{ marginTop: "0.5rem" }}>
-                            Tag: <strong>{cluster.tag || "Community Public Spot"}</strong>
-                          </p>
+                <div className="admin-community-list">
+                  {verifiedCommunityClusters.length ? (
+                    verifiedCommunityClusters.map((cluster) => (
+                      <div key={cluster.id} className="glass-card admin-community-card">
+                        <div className="admin-community-badges">
+                          <Badge tone="success">Verified</Badge>
+                          <Badge tone="info">Reports: {cluster.report_count}</Badge>
+                          <Badge tone="neutral">Reliability: {cluster.reliability_score || 0}%</Badge>
+                        </div>
+                        <p className="card-subtitle admin-community-title">
+                          Tag: <strong>{cluster.tag || "Community Public Spot"}</strong>
+                        </p>
+                        <div className="admin-community-meta">
                           <p className="card-subtitle">
                             Estimated yards: <strong>{cluster.estimated_yards ?? "N/A"}</strong>
                           </p>
@@ -240,35 +273,36 @@ export default function AdminDashboardPage() {
                           <p className="card-subtitle">Created by: {cluster.created_by || "N/A"}</p>
                           <p className="card-subtitle">Created at: {formatTimestamp(cluster.created_at)}</p>
                           <p className="card-subtitle">Verified at: {formatTimestamp(cluster.verified_at)}</p>
-                          {cluster.report_image_url ? (
-                            <div className="hero-actions">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  setProofModal({
-                                    title: cluster.tag || "Community Public Spot",
-                                    imageUrl: cluster.report_image_url || "",
-                                  })
-                                }
-                              >
-                                View Proof Image
-                              </Button>
-                            </div>
-                          ) : (
-                            <p className="card-subtitle">Proof image: Not provided</p>
-                          )}
-                          <div className="hero-actions">
+                        </div>
+                        {cluster.report_image_url ? (
+                          <div className="admin-community-actions">
                             <Button
-                              variant="secondary"
-                              isLoading={deletingClusterId === cluster.id}
-                              onClick={() => void handleDeleteCommunitySpot(cluster.id)}
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setProofModal({
+                                  title: cluster.tag || "Community Public Spot",
+                                  imageUrl: cluster.report_image_url || "",
+                                })
+                              }
                             >
-                              Remove
+                              View Proof Image
                             </Button>
                           </div>
+                        ) : (
+                          <p className="card-subtitle">Proof image: Not provided</p>
+                        )}
+                        <div className="admin-community-actions">
+                          <Button
+                            variant="secondary"
+                            isLoading={deletingClusterId === cluster.id}
+                            onClick={() => void handleDeleteCommunitySpot(cluster.id)}
+                          >
+                            Remove
+                          </Button>
                         </div>
-                      ))
+                      </div>
+                    ))
                   ) : (
                     <p className="card-subtitle">No verified community spots.</p>
                   )}
@@ -300,7 +334,7 @@ export default function AdminDashboardPage() {
             width={920}
             height={540}
             unoptimized
-            style={{ width: "100%", height: "auto", borderRadius: "12px", objectFit: "cover" }}
+            className="admin-proof-image"
           />
         ) : (
           <p className="card-subtitle">Proof image unavailable.</p>

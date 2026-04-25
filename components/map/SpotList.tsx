@@ -1,5 +1,6 @@
 import type { RankedSpot } from "@/lib/optimization";
 import { SpotCard } from "@/components/map/SpotCard";
+import { Badge } from "@/components/ui";
 
 interface SpotListProps {
   spots: RankedSpot[];
@@ -19,11 +20,20 @@ export function SpotList({
   onReportSpot,
 }: SpotListProps) {
   if (!spots.length) {
-    return <p className="card-subtitle">No matching spots right now. Adjust filters and try again.</p>;
+    return (
+      <div className="glass-card map-empty-state">
+        <p className="card-subtitle">No matching spots right now. Try changing destination or filters.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="spot-list">
+    <div className="spot-list-wrap">
+      <div className="spot-list-head">
+        <h3>Nearby Spots</h3>
+        <Badge tone="info">{spots.length} shown</Badge>
+      </div>
+      <div className="spot-list">
       {spots.map((spot) => (
         <SpotCard
           key={spot.id}
@@ -35,6 +45,7 @@ export function SpotList({
           onReport={() => onReportSpot(spot)}
         />
       ))}
+      </div>
     </div>
   );
 }

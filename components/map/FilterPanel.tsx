@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Card } from "@/components/ui";
+import { Button } from "@/components/ui";
 
 const AMENITIES = ["CCTV", "Covered", "EV Charging", "24/7", "Security"];
 
@@ -23,6 +25,8 @@ export function FilterPanel({
   onSortByChange,
   onIncludeClosedChange,
 }: FilterPanelProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const toggleAmenity = (amenity: string) => {
     if (amenities.includes(amenity)) {
       onAmenitiesChange(amenities.filter((item) => item !== amenity));
@@ -33,9 +37,9 @@ export function FilterPanel({
   };
 
   return (
-    <Card title="Filters" subtitle="Tune recommendations for your route and vehicle.">
+    <Card className="map-filter-card" title="Refine Results" subtitle="Use advanced filters only when needed.">
       <div className="form-grid">
-        <label>
+        <label className="map-field">
           <span className="card-subtitle">Sort by</span>
           <select
             className="select"
@@ -48,7 +52,7 @@ export function FilterPanel({
           </select>
         </label>
 
-        <label>
+        <label className="map-field">
           <span className="card-subtitle">Max hourly rate: Rs {maxHourlyRate}</span>
           <input
             type="range"
@@ -59,33 +63,46 @@ export function FilterPanel({
           />
         </label>
 
-        <div>
-          <span className="card-subtitle" style={{ fontWeight: 600, color: "var(--text-primary)" }}>Amenities</span>
-          <div className="amenities-grid">
-            {AMENITIES.map((amenity) => {
-              const checked = amenities.includes(amenity);
-              return (
-                <label key={amenity} className="toggle-row-compact">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleAmenity(amenity)}
-                  />
-                  <span style={{ fontSize: "0.9rem" }}>{amenity}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowAdvanced((current) => !current)}
+        >
+          {showAdvanced ? "Hide Advanced Filters" : "Show Advanced Filters"}
+        </Button>
 
-        <label className="toggle-row">
-          <span>Show closed spots</span>
-          <input
-            type="checkbox"
-            checked={includeClosed}
-            onChange={(event) => onIncludeClosedChange(event.target.checked)}
-          />
-        </label>
+        {showAdvanced ? (
+          <>
+            <div>
+              <span className="card-subtitle" style={{ fontWeight: 600, color: "var(--text-primary)" }}>Amenities</span>
+              <div className="amenities-grid">
+                {AMENITIES.map((amenity) => {
+                  const checked = amenities.includes(amenity);
+                  return (
+                    <label key={amenity} className="toggle-row-compact">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAmenity(amenity)}
+                      />
+                      <span style={{ fontSize: "0.9rem" }}>{amenity}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="toggle-row">
+              <span>Show closed spots</span>
+              <input
+                type="checkbox"
+                checked={includeClosed}
+                onChange={(event) => onIncludeClosedChange(event.target.checked)}
+              />
+            </label>
+          </>
+        ) : null}
       </div>
     </Card>
   );

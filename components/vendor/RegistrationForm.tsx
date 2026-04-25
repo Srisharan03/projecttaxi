@@ -27,7 +27,6 @@ interface RegistrationState {
   vendorName: string;
   email: string;
   phone: string;
-  platformFeeRate: string;
 }
 
 interface SpotDraft {
@@ -53,11 +52,11 @@ const INITIAL_STATE: RegistrationState = {
   vendorName: "",
   email: "",
   phone: "",
-  platformFeeRate: "0.15",
 };
 
 const MAX_IMAGE_DIMENSION = 1200;
 const MAX_FILES_PER_GROUP = 3;
+const DEFAULT_PLATFORM_FEE_RATE = 0.15;
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 const DEFAULT_SPOT_LOCATION = { lat: 17.385, lng: 78.4867 };
@@ -589,7 +588,7 @@ export function RegistrationForm() {
             phone: state.phone,
             profile_image: vendorImageUrls[0] ?? "",
             documents: documentUrls,
-            platform_fee_rate: Number(state.platformFeeRate || 0.15),
+            platform_fee_rate: DEFAULT_PLATFORM_FEE_RATE,
           },
           spots: spotDrafts.map((spot, index) => {
             const amenities = [...spot.amenities, ...spot.customAmenities];
@@ -645,11 +644,11 @@ export function RegistrationForm() {
   return (
     <form className="form-grid vendor-form" onSubmit={handleSubmit}>
       {step === "vendor" ? (
-        <Card title="Step 1: Vendor Details" subtitle="Basic profile before adding parking spaces.">
+        <Card title="Step 1: Owner Details" subtitle="Basic profile before adding parking spaces.">
           <div className="form-grid vendor-form-panel">
             <div className="vendor-form-grid-2">
               <label className="vendor-form-field">
-                <span className="vendor-form-label">Vendor or Business Name</span>
+                <span className="vendor-form-label">Owner or Business Name</span>
                 <input
                   className="input"
                   name="vendor_name"
@@ -682,28 +681,11 @@ export function RegistrationForm() {
                 />
               </label>
 
-              <label className="vendor-form-field">
-                <span className="vendor-form-label">Platform Fee Rate</span>
-                <input
-                  className="input"
-                  type="number"
-                  step={0.01}
-                  min={0.05}
-                  max={0.5}
-                  name="platform_fee_rate"
-                  placeholder="Ex: 0.15"
-                  value={state.platformFeeRate}
-                  onChange={(event) =>
-                    setState((current) => ({ ...current, platformFeeRate: event.target.value }))
-                  }
-                />
-                <span className="vendor-form-helper">Enter decimal format. Example: 0.15 = 15%.</span>
-              </label>
             </div>
 
             <div className="vendor-upload-block">
               <label className="vendor-form-field">
-                <span className="vendor-form-label">Vendor Profile Photo</span>
+                <span className="vendor-form-label">Owner Profile Photo</span>
                 <input
                   className="input"
                   type="file"
@@ -744,7 +726,7 @@ export function RegistrationForm() {
       {step === "spots" ? (
         <Card
           title="Step 2: Parking Spot Details"
-          subtitle="One vendor can register multiple parking spots in one submission."
+          subtitle="One owner can register multiple parking spots in one submission."
         >
           <div className="form-grid">
             {spotDrafts.map((spot, index) => {
@@ -977,7 +959,7 @@ export function RegistrationForm() {
 
                   <div>
                     <span className="vendor-form-label">Amenities</span>
-                    <div className="hero-actions" style={{ marginTop: "0.4rem" }}>
+                    <div className="hero-actions vendor-option-row">
                       {AMENITY_OPTIONS.map((amenity) => {
                         const active = spot.amenities.includes(amenity);
                         return (
@@ -1031,7 +1013,7 @@ export function RegistrationForm() {
 
                   <div>
                     <span className="vendor-form-label">Supported Vehicle Types</span>
-                    <div className="hero-actions" style={{ marginTop: "0.4rem" }}>
+                    <div className="hero-actions vendor-option-row">
                       {VEHICLE_OPTIONS.map((type) => {
                         const active = spot.vehicleTypes.includes(type);
                         return (
@@ -1071,10 +1053,10 @@ export function RegistrationForm() {
 
             <div className="vendor-form-grid-2">
               <Button type="button" variant="ghost" onClick={() => setStep("vendor")}>
-                Back to Vendor Details
+                Back to Owner Details
               </Button>
               <Button type="submit" isLoading={submitting} disabled={!canSubmit}>
-                Submit Vendor + {spotDrafts.length} Spot(s)
+                Submit Owner + {spotDrafts.length} Spot(s)
               </Button>
             </div>
           </div>

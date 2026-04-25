@@ -110,7 +110,7 @@ export default function ScanPage() {
     <div className="scan-page shell">
       <section className="section">
         <Card title="OTP Verification" subtitle="Verify 6-digit entry and exit OTP using booking code.">
-          <div className="hero-actions">
+          <div className="scan-intro-badges">
             <Badge tone="info">No Spot ID needed</Badge>
             <Badge tone="success">No user geolocation needed</Badge>
           </div>
@@ -118,9 +118,13 @@ export default function ScanPage() {
       </section>
 
       <section className="scan-grid">
-        <Card title="Vendor OTP Console" subtitle="Enter booking code and OTP to process entry or exit.">
-          <div className="form-grid">
-            <label>
+        <Card
+          title="Owner OTP Console"
+          subtitle="Enter booking code and OTP to process entry or exit."
+          className="scan-console-card"
+        >
+          <div className="scan-form-grid">
+            <label className="scan-field">
               <span className="card-subtitle">Booking Code</span>
               <input
                 className="input"
@@ -130,7 +134,7 @@ export default function ScanPage() {
               />
             </label>
 
-            <label>
+            <label className="scan-field">
               <span className="card-subtitle">Action</span>
               <select
                 className="select"
@@ -142,7 +146,7 @@ export default function ScanPage() {
               </select>
             </label>
 
-            <label>
+            <label className="scan-field">
               <span className="card-subtitle">6-digit OTP</span>
               <input
                 className="input"
@@ -152,7 +156,7 @@ export default function ScanPage() {
               />
             </label>
 
-            <label>
+            <label className="scan-field">
               <span className="card-subtitle">Rating after checkout</span>
               <input
                 className="input"
@@ -164,7 +168,7 @@ export default function ScanPage() {
               />
             </label>
 
-            <Button onClick={() => void handleVerifyOtp()} isLoading={processing}>
+            <Button onClick={() => void handleVerifyOtp()} isLoading={processing} className="scan-verify-btn">
               Verify OTP
             </Button>
           </div>
@@ -173,7 +177,7 @@ export default function ScanPage() {
         <ScanResultCard status={status} message={message} />
 
         {payableAmount !== null ? (
-          <Card title="Amount Payable" subtitle="Show this final amount to user and vendor.">
+          <Card title="Amount Payable" subtitle="Show this final amount to user and owner." className="scan-payable-card">
             <div className="toggle-row">
               <span>Final Payable</span>
               <strong>Rs {payableAmount}</strong>

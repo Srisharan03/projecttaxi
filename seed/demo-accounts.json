@@ -1,0 +1,198 @@
+﻿{
+  "note": "Demo accounts for local testing. Use password 123456 for all accounts.",
+  "default_password": "123456",
+  "users": [
+    {
+      "name": "Aarav Sharma",
+      "email": "user01@parksaathi.demo",
+      "phone": "+91 9000000001",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Diya Patel",
+      "email": "user02@parksaathi.demo",
+      "phone": "+91 9000000002",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Rohan Mehta",
+      "email": "user03@parksaathi.demo",
+      "phone": "+91 9000000003",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Isha Reddy",
+      "email": "user04@parksaathi.demo",
+      "phone": "+91 9000000004",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Vikram Nair",
+      "email": "user05@parksaathi.demo",
+      "phone": "+91 9000000005",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Sneha Gupta",
+      "email": "user06@parksaathi.demo",
+      "phone": "+91 9000000006",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Karan Yadav",
+      "email": "user07@parksaathi.demo",
+      "phone": "+91 9000000007",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Ananya Das",
+      "email": "user08@parksaathi.demo",
+      "phone": "+91 9000000008",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Rahul Verma",
+      "email": "user09@parksaathi.demo",
+      "phone": "+91 9000000009",
+      "role": "user",
+      "profile_image": ""
+    },
+    {
+      "name": "Maya Singh",
+      "email": "user10@parksaathi.demo",
+      "phone": "+91 9000000010",
+      "role": "user",
+      "profile_image": ""
+    }
+  ],
+  "vendors": [
+    {
+      "name": "Metro Parkings",
+      "email": "vendor01@parksaathi.demo",
+      "phone": "+91 9110000001",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "City Wheels Parking",
+      "email": "vendor02@parksaathi.demo",
+      "phone": "+91 9110000002",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "Prime Slots",
+      "email": "vendor03@parksaathi.demo",
+      "phone": "+91 9110000003",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "SafePark Hub",
+      "email": "vendor04@parksaathi.demo",
+      "phone": "+91 9110000004",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "Orbit Parking Co",
+      "email": "vendor05@parksaathi.demo",
+      "phone": "+91 9110000005",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "Urban Slot Center",
+      "email": "vendor06@parksaathi.demo",
+      "phone": "+91 9110000006",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "ParkRight Services",
+      "email": "vendor07@parksaathi.demo",
+      "phone": "+91 9110000007",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "RapidPark Stations",
+      "email": "vendor08@parksaathi.demo",
+      "phone": "+91 9110000008",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "Civic Parking Point",
+      "email": "vendor09@parksaathi.demo",
+      "phone": "+91 9110000009",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    },
+    {
+      "name": "BlueLot Parking",
+      "email": "vendor10@parksaathi.demo",
+      "phone": "+91 9110000010",
+      "role": "vendor",
+      "status": "pending",
+      "platform_fee_rate": 0.15,
+      "spots": [],
+      "documents": [],
+      "revenue_earned": 0,
+      "profile_image": ""
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+<svg width="900" height="520" viewBox="0 0 900 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="900" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#0E2A3A"/>
+    </linearGradient>
+    <linearGradient id="car" x1="200" y1="250" x2="710" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0EA5A4"/>
+      <stop offset="1" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="370" y1="195" x2="590" y2="245" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E2E8F0" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#94A3B8" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="520" rx="34" fill="url(#bg)"/>
+  <circle cx="120" cy="110" r="80" fill="#0EA5A4" fill-opacity="0.14"/>
+  <circle cx="760" cy="110" r="110" fill="#3B82F6" fill-opacity="0.15"/>
+  <circle cx="790" cy="400" r="120" fill="#14B8A6" fill-opacity="0.12"/>
+  <rect x="120" y="360" width="660" height="12" rx="6" fill="#1E293B"/>
+  <path d="M220 292C220 256.654 248.654 228 284 228H586C631.287 228 668 264.713 668 310V314H220V292Z" fill="url(#car)"/>
+  <path d="M270 228L334 168C346.658 156.133 363.359 149.525 380.716 149.525H523.14C539.673 149.525 555.603 155.78 568.118 167.028L632 224H270V228Z" fill="#0F172A"/>
+  <path d="M330 176H520C530.126 176 539.993 179.182 548.209 185.09L579 207H307L330 176Z" fill="url(#glass)"/>
+  <rect x="225" y="314" width="438" height="30" rx="12" fill="#0F172A"/>
+  <circle cx="306" cy="344" r="56" fill="#0F172A"/>
+  <circle cx="306" cy="344" r="30" fill="#94A3B8"/>
+  <circle cx="584" cy="344" r="56" fill="#0F172A"/>
+  <circle cx="584" cy="344" r="30" fill="#94A3B8"/>
+  <rect x="230" y="280" width="35" height="20" rx="10" fill="#F59E0B"/>
+  <rect x="622" y="280" width="35" height="20" rx="10" fill="#F59E0B"/>
+  <rect x="360" y="95" width="180" height="36" rx="18" fill="#0EA5A4" fill-opacity="0.24"/>
+  <text x="450" y="118" fill="#CCFBF1" font-size="18" text-anchor="middle" font-family="Outfit, sans-serif">PARKSAATHI LIVE</text>
+</svg>

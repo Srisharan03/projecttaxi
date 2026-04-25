@@ -324,6 +324,8 @@ function BookingPageContent() {
 
     return sessions.filter((session) => !isActiveSession(session));
   }, [sessions, viewFilter]);
+  const activeSessionsCount = sessions.filter((session) => isActiveSession(session)).length;
+  const historySessionsCount = sessions.length - activeSessionsCount;
 
   const sessionStatus = selectedSession?.status ?? "booked";
   const sessionApprovalStatus = selectedSession?.approval_status ?? "pending";
@@ -379,7 +381,7 @@ function BookingPageContent() {
     }
 
     if (spot.vendor_id === "google-public") {
-      setError("Public spots are navigation-only. Booking is available only for vendor spots.");
+      setError("Public spots are navigation-only. Booking is available only for owner spots.");
       setSuccessMessage("");
       return;
     }
@@ -429,7 +431,7 @@ function BookingPageContent() {
       setExtensionError("");
       setExtensionSuccess("");
       setShowExpiryReminder(false);
-      setSuccessMessage("Booking request sent successfully. Waiting for vendor approval.");
+      setSuccessMessage("Booking request sent successfully. Waiting for owner approval.");
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create session.");
       setSuccessMessage("");
@@ -520,44 +522,41 @@ function BookingPageContent() {
     <div className="booking-page shell">
       <section className="section">
         <Card title="My Bookings" subtitle="View active and history bookings.">
-          <div className="hero-actions">
-            <Badge tone="info">Total: {sessions.length}</Badge>
-            <Badge tone="success">Active: {sessions.filter((session) => isActiveSession(session)).length}</Badge>
-            <Badge tone="neutral">History: {sessions.filter((session) => !isActiveSession(session)).length}</Badge>
-            <Button
-              variant={viewFilter === "active" ? "primary" : "secondary"}
-              onClick={() => setViewFilter("active")}
-            >
-              Active
-            </Button>
-            <Button
-              variant={viewFilter === "history" ? "primary" : "secondary"}
-              onClick={() => setViewFilter("history")}
-            >
-              History
-            </Button>
-            <Button
-              variant={viewFilter === "all" ? "primary" : "secondary"}
-              onClick={() => setViewFilter("all")}
-            >
-              All
-            </Button>
+          <div className="booking-toolbar">
+            <div className="booking-metric-row">
+              <Badge tone="info">Total: {sessions.length}</Badge>
+              <Badge tone="success">Active: {activeSessionsCount}</Badge>
+              <Badge tone="neutral">History: {historySessionsCount}</Badge>
+            </div>
+            <div className="booking-filter-row">
+              <Button
+                variant={viewFilter === "active" ? "primary" : "secondary"}
+                onClick={() => setViewFilter("active")}
+              >
+                Active
+              </Button>
+              <Button
+                variant={viewFilter === "history" ? "primary" : "secondary"}
+                onClick={() => setViewFilter("history")}
+              >
+                History
+              </Button>
+              <Button
+                variant={viewFilter === "all" ? "primary" : "secondary"}
+                onClick={() => setViewFilter("all")}
+              >
+                All
+              </Button>
+            </div>
           </div>
 
           {filteredSessions.length ? (
-            <div className="form-grid" style={{ marginTop: "0.8rem" }}>
+            <div className="booking-list-grid">
               {filteredSessions.map((session) => (
                 <button
                   key={session.id}
                   type="button"
-                  className="glass-card"
-                  style={{
-                    textAlign: "left",
-                    padding: "0.8rem",
-                    border: selectedSessionId === session.id ? "2px solid #1d4ed8" : "1px solid #dbe2f1",
-                    borderRadius: "12px",
-                    cursor: "pointer",
-                  }}
+                  className={`booking-session-card ${selectedSessionId === session.id ? "booking-session-card-active" : ""}`}
                   onClick={() => {
                     setIsCreatingNew(false);
                     setSelectedSessionId(session.id);
@@ -570,29 +569,29 @@ function BookingPageContent() {
                     setShowExpiryReminder(false);
                   }}
                 >
-                  <div className="hero-actions">
+                  <div className="booking-session-top">
                     <Badge tone={isActiveSession(session) ? "success" : "neutral"}>{session.status}</Badge>
                     <Badge tone="info">Code: {session.access_code}</Badge>
                     <Badge tone="warning">Rs {Math.round(session.amount || 0)}</Badge>
                   </div>
-                  <div className="form-grid" style={{ marginTop: "0.45rem", gap: "0.3rem" }}>
-                    <p className="card-subtitle" style={{ margin: 0 }}>
+                  <div className="booking-session-meta">
+                    <p className="card-subtitle">
                       Location:{" "}
                       <strong>
                         {spotMapById[session.spot_id]
                           ? getShortLocationName(spotMapById[session.spot_id].address)
-                          : "Loading..."}
+                        : "Loading..."}
                       </strong>
                     </p>
-                    <p className="card-subtitle" style={{ margin: 0 }}>
+                    <p className="card-subtitle">
                       Park Start:{" "}
                       <strong>
                         {session.check_in_time
                           ? formatSessionTime(session.check_in_time)
-                          : new Date(session.start_time_iso).toLocaleString()}
+                        : new Date(session.start_time_iso).toLocaleString()}
                       </strong>
                     </p>
-                    <p className="card-subtitle" style={{ margin: 0 }}>
+                    <p className="card-subtitle">
                       Exit:{" "}
                       <strong>
                         {session.check_out_time
@@ -605,7 +604,7 @@ function BookingPageContent() {
               ))}
             </div>
           ) : (
-            <p className="card-subtitle" style={{ marginTop: "0.8rem" }}>
+            <p className="card-subtitle booking-empty-note">
               No bookings in this view.
             </p>
           )}
@@ -616,7 +615,7 @@ function BookingPageContent() {
         open={isBookingModalOpen}
         onClose={() => setIsBookingModalOpen(false)}
         title={isCreatingNew ? "Create Booking Request" : "Booking Details"}
-        description={isCreatingNew ? "Send booking request to vendor." : "Manage OTP and track booking status."}
+        description={isCreatingNew ? "Send booking request to owner." : "Manage OTP and track booking status."}
         className="booking-detail-modal"
       >
         <div className="booking-modal-grid">
@@ -667,7 +666,7 @@ function BookingPageContent() {
             )}
 
             {successMessage ? (
-              <p className="card-subtitle" style={{ color: "#0f766e" }}>
+              <p className="card-subtitle booking-inline-note booking-inline-note-success">
                 {successMessage}
               </p>
             ) : null}
@@ -676,15 +675,34 @@ function BookingPageContent() {
 
           <div className="form-grid">
             {!isCreatingNew ? (
-              <Card title="Live Booking Updates" subtitle="Real-time status from vendor actions and OTP verification.">
-                <div className="form-grid">
-                  <div className="toggle-row">
-                    <span>Start Time</span>
-                    <strong>{checkInTimeLabel || "Waiting for entry OTP verification"}</strong>
+              <Card title="Live Booking Updates" subtitle="Real-time status from owner actions and OTP verification.">
+                <div className="booking-status-panel">
+                  <div className="booking-status-chip-row">
+                    <Badge tone={sessionStatus === "checked_in" ? "success" : "info"}>
+                      Session: {sessionStatus}
+                    </Badge>
+                    <Badge
+                      tone={
+                        sessionApprovalStatus === "accepted"
+                          ? "success"
+                          : sessionApprovalStatus === "rejected"
+                            ? "danger"
+                            : "warning"
+                      }
+                    >
+                      Approval: {sessionApprovalStatus}
+                    </Badge>
                   </div>
-                  <div className="toggle-row">
-                    <span>End Time</span>
-                    <strong>{checkOutTimeLabel || "Waiting for exit OTP verification"}</strong>
+                  <div className="booking-status-divider" />
+                  <div className="booking-status-block">
+                    <div className="toggle-row">
+                      <span>Start Time</span>
+                      <strong>{checkInTimeLabel || "Waiting for entry OTP verification"}</strong>
+                    </div>
+                    <div className="toggle-row">
+                      <span>End Time</span>
+                      <strong>{checkOutTimeLabel || "Waiting for exit OTP verification"}</strong>
+                    </div>
                   </div>
                   {sessionStatus === "checked_out" ? (
                     <>
@@ -705,7 +723,7 @@ function BookingPageContent() {
                 </div>
               </Card>
             ) : (
-              <Card title="Request Status" subtitle="Send request and wait for vendor approval.">
+              <Card title="Request Status" subtitle="Send request and wait for owner approval.">
                 <p className="card-subtitle">
                   Once request is sent, this booking will move to your active list with status pending/accepted.
                 </p>
@@ -726,8 +744,8 @@ function BookingPageContent() {
                   ) : null}
 
                   {showActiveExpiryReminder ? (
-                    <div className="glass-card" style={{ padding: "0.8rem", border: "1px solid #f59e0b" }}>
-                      <p className="card-subtitle" style={{ margin: 0, color: "#92400e", fontWeight: 600 }}>
+                    <div className="glass-card booking-alert-card">
+                      <p className="card-subtitle booking-alert-text">
                         Your booking is ending in ~10 minutes. Ready to move or extend now?
                       </p>
                     </div>
@@ -755,7 +773,7 @@ function BookingPageContent() {
                         </select>
                       </label>
 
-                      <div className="hero-actions">
+                      <div className="booking-extension-actions">
                         <Button variant="secondary" onClick={() => void handlePreviewExtension()} isLoading={extensionBusy}>
                           Check Extension
                         </Button>
@@ -765,7 +783,7 @@ function BookingPageContent() {
                       </div>
 
                       {extensionPreview ? (
-                        <div className="glass-card" style={{ padding: "0.8rem" }}>
+                        <div className="glass-card booking-slot-card">
                           <div className="toggle-row">
                             <span>Requested Until</span>
                             <strong>{new Date(extensionPreview.requestedEndMs).toLocaleTimeString()}</strong>
@@ -778,19 +796,19 @@ function BookingPageContent() {
                             <span>Extra Charge</span>
                             <strong>Rs {Math.round(extensionPreview.allowedExtraAmount)}</strong>
                           </div>
-                          <p className="card-subtitle" style={{ marginTop: "0.4rem" }}>
+                          <p className="card-subtitle booking-extension-note">
                             {extensionPreview.note}
                           </p>
                         </div>
                       ) : null}
 
                       {extensionSuccess ? (
-                        <p className="card-subtitle" style={{ color: "#0f766e", fontWeight: 600 }}>
+                        <p className="card-subtitle booking-inline-note booking-inline-note-success">
                           {extensionSuccess}
                         </p>
                       ) : null}
                       {extensionError ? (
-                        <p className="card-subtitle" style={{ color: "#b91c1c", fontWeight: 600 }}>
+                        <p className="card-subtitle booking-inline-note booking-inline-note-error">
                           {extensionError}
                         </p>
                       ) : null}
@@ -804,13 +822,13 @@ function BookingPageContent() {
               <Card title="Active OTP">
                 <div className="form-grid">
                   <Badge tone="info">OTP Action: {otpAction === "check_in" ? "Entry" : "Exit"}</Badge>
-                  <div className="glass-card" style={{ padding: "1rem", textAlign: "center" }}>
-                    <p className="card-subtitle">Share this OTP with vendor</p>
-                    <p style={{ fontSize: "2rem", letterSpacing: "0.45rem", fontWeight: 700, margin: 0 }}>
+                  <div className="glass-card booking-otp-display">
+                    <p className="card-subtitle">Share this OTP with owner</p>
+                    <p className="booking-otp-code">
                       {otpCode}
                     </p>
                     {bookingCode ? (
-                      <p className="card-subtitle" style={{ marginTop: "0.6rem" }}>
+                      <p className="card-subtitle booking-otp-sub">
                         Booking Code: <strong>{bookingCode}</strong>
                       </p>
                     ) : null}
@@ -828,7 +846,7 @@ function BookingPageContent() {
                   <p className="card-subtitle">
                     {cancellationReason === "slot_expired"
                       ? "Your booking was cancelled because the time slot passed. Please choose another time and rebook."
-                      : "Your booking request was rejected by vendor. Please choose another time and rebook."}
+                      : "Your booking request was rejected by owner. Please choose another time and rebook."}
                   </p>
                 ) : canGenerateEntryOtp ? (
                   <div className="form-grid">
@@ -846,7 +864,7 @@ function BookingPageContent() {
                   </p>
                 ) : (
                   <p className="card-subtitle">
-                    Waiting for vendor acceptance. You can switch bookings from My Bookings above.
+                    Waiting for owner acceptance. You can switch bookings from My Bookings above.
                   </p>
                 )}
 

@@ -1,0 +1,17 @@
+<svg width="420" height="220" viewBox="0 0 420 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="miniCar" x1="70" y1="104" x2="353" y2="104" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22C55E"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+  </defs>
+  <rect width="420" height="220" rx="20" fill="#0F172A"/>
+  <path d="M70 126C70 105.013 87.0132 88 108 88H272C316.183 88 352 123.817 352 168V170H70V126Z" fill="url(#miniCar)"/>
+  <path d="M124 88L162 56C170.392 48.9334 181.013 45.053 191.97 45.053H256.275C266.846 45.053 277.089 48.7868 285.201 55.592L322 87H124V88Z" fill="#111827"/>
+  <circle cx="132" cy="170" r="26" fill="#111827"/>
+  <circle cx="132" cy="170" r="14" fill="#94A3B8"/>
+  <circle cx="297" cy="170" r="26" fill="#111827"/>
+  <circle cx="297" cy="170" r="14" fill="#94A3B8"/>
+  <rect x="76" y="116" width="20" height="12" rx="6" fill="#F59E0B"/>
+  <rect x="327" y="116" width="20" height="12" rx="6" fill="#F59E0B"/>
+</svg>

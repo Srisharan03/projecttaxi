@@ -1,98 +1,105 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Badge, Button, Card } from "@/components/ui";
 import "@/styles/landing.css";
 
 export default function Home() {
-  const features = [
-    "Live vendor status sync",
-    "Smart ranking by distance, price, trust",
-    "QR check-in/out with geofence validation",
-    "Crowdsourced spot audits",
-    "Vendor and admin control panels",
-    "Route guidance with OpenRouteService",
-    "Revenue transparency with platform fees",
+  const valuePillars = [
+    {
+      title: "Clarity First",
+      text: "One clear route from search to parking. No crowded UI, no noise.",
+    },
+    {
+      title: "Realtime Confidence",
+      text: "Spot availability and workflow actions update live while users navigate.",
+    },
+    {
+      title: "MVP Practicality",
+      text: "Everything important is visible fast: discover, book, verify, and exit.",
+    },
   ];
 
-  const steps = [
-    "Search by area and vehicle type",
-    "Review smart-ranked spots",
-    "Book and generate QR session pass",
-    "Pay with UPI or cash OTP",
-    "Scan on arrival for geofenced check-in",
-    "Scan on exit for checkout and billing",
-    "Submit audits and earn verification credits",
+  const journey = [
+    {
+      title: "Find",
+      text: "Choose destination and vehicle profile to get relevant nearby spots.",
+    },
+    {
+      title: "Decide",
+      text: "Compare route-fit and price quickly with less visual clutter.",
+    },
+    {
+      title: "Park",
+      text: "Generate OTP/QR flow, verify entry and exit, then complete seamlessly.",
+    },
   ];
 
-  const testimonials = [
-    {
-      quote: "We turned random parking chaos into a live marketplace for our area.",
-      name: "Naveen • Vendor",
-    },
-    {
-      quote: "I book, scan, and park in under a minute now.",
-      name: "Aadhya • Daily commuter",
-    },
-    {
-      quote: "The live open/close toggle is the demo crowd favorite every time.",
-      name: "Team Mentor",
-    },
+  const realtimeHighlights = [
+    "Live status sync between user, owner, and admin",
+    "Approval workflow for owner spots",
+    "Public spot reports with proof and audit trail",
+    "Route-aware ranking for practical parking decisions",
   ];
 
   return (
     <div className="landing-page shell">
-      <section className="hero">
-        <Badge tone="info">HACKATHON BUILD</Badge>
-        <h1>Find trusted parking in seconds with real-time occupancy and QR entry.</h1>
-        <p>
-          ParkSaathi connects drivers with approved vendors through a live marketplace,
-          geofenced check-ins, and optimization-driven ranking.
-        </p>
-
-        <div className="hero-actions">
-          <Link href="/auth">
-            <Button>Find Parking</Button>
-          </Link>
-          <Link href="/auth">
-            <Button variant="secondary">List Your Space</Button>
-          </Link>
+      <section className="hero-panel">
+        <div className="hero-copy">
+          <Badge tone="info">MVP - REALTIME PARKING</Badge>
+          <h1>Smarter Parking Operations Through Clarity, Accuracy, and Control</h1>
+          <p>
+            ParkSaathi is built for real decisions in real time. We keep the flow simple:
+            find quickly, book confidently, and complete entry/exit without confusion.
+          </p>
+          <div className="hero-actions">
+            <Link href="/auth">
+              <Button size="lg">Start Parking</Button>
+            </Link>
+            <Link href="/vendor/register">
+              <Button size="lg" variant="secondary">List A Spot</Button>
+            </Link>
+          </div>
         </div>
-
-        <div className="stats-grid">
-          <div className="stat-card">
-            <span className="stat-label">LIVE SPOTS</span>
-            <span className="stat-value">1,200+</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">AVG. SAVE TIME</span>
-            <span className="stat-value">18 min</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">VENDOR UPTIME</span>
-            <span className="stat-value">98.4%</span>
+        <div className="hero-visual">
+          <div className="hero-glow hero-glow-a" />
+          <div className="hero-glow hero-glow-b" />
+          <Image
+            src="/car-hero.svg"
+            alt="Modern car parking illustration"
+            width={900}
+            height={520}
+            priority
+            className="hero-car"
+          />
+          <div className="hero-floating-card">
+            <Image src="/car-mini.svg" alt="Car visual card" width={240} height={120} />
+            <p>Realtime parking guidance with clean decisions at every step.</p>
           </div>
         </div>
       </section>
 
       <section className="section">
-        <h2 style={{ textAlign: "center", marginBottom: "2rem", fontSize: "2rem", fontWeight: 700 }}>Features that solve the chaos</h2>
-        <div className="features-grid">
-          {features.map((feature) => (
-            <Card key={feature} title={feature}>
-              <p className="card-subtitle">
-                Built on Firebase real-time updates and modular Next.js route architecture.
-              </p>
+        <div className="value-grid">
+          {valuePillars.map((pillar) => (
+            <Card key={pillar.title} className="value-card" title={pillar.title}>
+              <p className="card-subtitle">{pillar.text}</p>
             </Card>
           ))}
         </div>
       </section>
 
       <section className="section">
-        <Card title="How It Works" subtitle="From discovery to checkout in smooth steps.">
-          <div className="timeline-grid">
-            {steps.map((step, index) => (
-              <article key={step} className="timeline-step">
-                <Badge tone="info">Step {index + 1}</Badge>
-                <p>{step}</p>
+        <Card
+          title="Parking Journey"
+          subtitle="Designed to reduce stress, not add screens."
+          className="journey-card"
+        >
+          <div className="journey-grid">
+            {journey.map((step, index) => (
+              <article className="journey-step" key={step.title}>
+                <span className="journey-index">0{index + 1}</span>
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
               </article>
             ))}
           </div>
@@ -100,14 +107,34 @@ export default function Home() {
       </section>
 
       <section className="section">
-        <Card className="cta-section" title="Ready to join the revolution?" subtitle="Experience the future of urban parking today.">
+        <Card
+          title="Realtime Foundation"
+          subtitle="All key actions are aligned across user, owner, and admin."
+          className="realtime-card"
+        >
+          <div className="realtime-list">
+            {realtimeHighlights.map((item) => (
+              <article key={item} className="realtime-item">
+                <span className="realtime-dot" />
+                <p>{item}</p>
+              </article>
+            ))}
+          </div>
+        </Card>
+      </section>
+
+      <section className="section">
+        <Card className="cta-section" title="Ready to Launch Better Parking UX?" subtitle="Use the current feature set with a cleaner, calmer interface.">
           <div className="hero-actions">
-            <Link href="/auth">
-              <Button>Get Started Now</Button>
+            <Link href="/map">
+              <Button size="lg">Open Map</Button>
             </Link>
             <Link href="/auth">
-              <Button variant="secondary">Become a Partner</Button>
+              <Button size="lg" variant="secondary">Login</Button>
             </Link>
+          </div>
+          <div className="cta-footnote">
+            <p>No fake counters. No filler metrics. Just workflow clarity.</p>
           </div>
         </Card>
       </section>

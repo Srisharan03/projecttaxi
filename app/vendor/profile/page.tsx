@@ -7,6 +7,7 @@ import { Badge, Button, Card } from "@/components/ui";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 import { getVendorByEmail, updateVendorProfile, type Vendor } from "@/lib/firestore";
 import { useAuthStore } from "@/store/authStore";
+import "@/styles/profile.css";
 
 type VendorWithId = Vendor & { id: string };
 
@@ -47,7 +48,7 @@ export default function VendorProfilePage() {
         setProfileImageUrl(row?.profile_image || "");
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load vendor profile.");
+          setError(loadError instanceof Error ? loadError.message : "Unable to load owner profile.");
         }
       } finally {
         if (!cancelled) {
@@ -77,7 +78,7 @@ export default function VendorProfilePage() {
 
   const handleSave = async () => {
     if (!vendor?.id) {
-      setError("Vendor account not found.");
+      setError("Owner account not found.");
       return;
     }
 
@@ -100,9 +101,9 @@ export default function VendorProfilePage() {
       setProfileImageUrl(nextImage);
       setPendingImage(null);
       setVendor((current) => (current ? { ...current, name, email, phone, profile_image: nextImage } : current));
-      setMessage("Vendor profile updated.");
+      setMessage("Owner profile updated.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save vendor profile.");
+      setError(saveError instanceof Error ? saveError.message : "Unable to save owner profile.");
     } finally {
       setBusy(false);
     }
@@ -110,20 +111,20 @@ export default function VendorProfilePage() {
 
   if (!user) {
     return (
-      <div className="shell" style={{ margin: "2rem auto" }}>
-        <Card title="Vendor Profile" subtitle="Please login to manage vendor profile." />
+      <div className="shell profile-shell">
+        <Card title="Owner Profile" subtitle="Please login to manage owner profile." />
       </div>
     );
   }
 
   if (!loading && !vendor) {
     return (
-      <div className="shell" style={{ margin: "2rem auto", maxWidth: "760px" }}>
-        <Card title="Vendor Profile" subtitle="No vendor profile found for this account email.">
+      <div className="shell profile-shell profile-shell-narrow">
+        <Card title="Owner Profile" subtitle="No owner profile found for this account email.">
           <div className="form-grid">
-            <p className="card-subtitle">Register your vendor profile first, then come back here to edit details.</p>
+            <p className="card-subtitle">Register your owner profile first, then come back here to edit details.</p>
             <Link href="/vendor/register">
-              <Button>Go To Vendor Registration</Button>
+              <Button>Go To Owner Registration</Button>
             </Link>
           </div>
         </Card>
@@ -132,17 +133,17 @@ export default function VendorProfilePage() {
   }
 
   return (
-    <div className="shell" style={{ margin: "2rem auto", maxWidth: "760px" }}>
-      <Card title="Vendor Profile" subtitle="Manage profile details shown for your vendor account.">
+    <div className="shell profile-shell profile-shell-narrow">
+      <Card title="Owner Profile" subtitle="Manage profile details shown for your owner account.">
         <div className="form-grid">
-          <div className="hero-actions" style={{ justifyContent: "center" }}>
+          <div className="profile-status-row">
             <Badge tone={loading ? "warning" : "success"}>
               {loading ? "Loading..." : "Ready"}
             </Badge>
           </div>
 
-          <div style={{ display: "grid", justifyItems: "center", gap: "0.75rem" }}>
-            <label style={{ width: "100%", maxWidth: "420px" }}>
+          <div className="profile-image-section">
+            <label className="profile-image-input-wrap">
               <span className="card-subtitle">Profile Image</span>
               <input
                 className="input"
@@ -155,14 +156,14 @@ export default function VendorProfilePage() {
             {(pendingImage || profileImageUrl) ? (
               <Image
                 src={pendingPreviewUrl || profileImageUrl}
-                alt="Vendor profile"
+                alt="Owner profile"
                 width={220}
                 height={220}
                 unoptimized
-                style={{ width: "140px", height: "140px", borderRadius: "999px", objectFit: "cover", border: "1px solid var(--line-soft)" }}
+                className="profile-avatar"
               />
             ) : (
-              <p className="card-subtitle" style={{ textAlign: "center" }}>No profile image uploaded yet.</p>
+              <p className="card-subtitle profile-empty-image-note">No profile image uploaded yet.</p>
             )}
           </div>
 
@@ -184,8 +185,8 @@ export default function VendorProfilePage() {
           <Button onClick={() => void handleSave()} isLoading={busy || loading || !vendor}>
             Save Profile
           </Button>
-          {message ? <p className="card-subtitle" style={{ color: "#166534" }}>{message}</p> : null}
-          {error ? <p className="card-subtitle" style={{ color: "#b91c1c" }}>{error}</p> : null}
+          {message ? <p className="card-subtitle profile-note-success">{message}</p> : null}
+          {error ? <p className="card-subtitle profile-note-error">{error}</p> : null}
         </div>
       </Card>
     </div>

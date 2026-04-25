@@ -45,13 +45,13 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
 
   if (!initialized || !user || role !== "vendor") {
     return (
-      <div className="shell" style={{ padding: "4rem", textAlign: "center" }}>
+      <div className="shell vendor-guard">
         <p className="card-subtitle">
-          {isStalled ? "Vendor access check is taking too long." : "Verifying vendor access..."}
+          {isStalled ? "Owner access check is taking too long." : "Verifying owner access..."}
         </p>
         {isStalled ? (
-          <div style={{ marginTop: "1rem", display: "flex", justifyContent: "center", gap: "0.75rem" }}>
-            <Button variant="secondary" onClick={() => router.push("/auth/vendor")}>Go to Vendor Login</Button>
+          <div className="vendor-guard-actions">
+            <Button variant="secondary" onClick={() => router.push("/auth/vendor")}>Go to Owner Login</Button>
             <Button variant="ghost" onClick={() => window.location.reload()}>Reload</Button>
           </div>
         ) : null}

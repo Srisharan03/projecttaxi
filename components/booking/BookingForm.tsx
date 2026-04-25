@@ -27,7 +27,7 @@ export function BookingForm({
   loading,
 }: BookingFormProps) {
   return (
-    <Card title="Booking Details" subtitle="Create a booking request for vendor approval.">
+    <Card title="Booking Details" subtitle="Create a booking request for owner approval.">
       <div className="form-grid">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
           <label>

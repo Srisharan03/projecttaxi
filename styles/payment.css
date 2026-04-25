@@ -1,0 +1,78 @@
+.payment-page {
+  padding: 2rem 0 4rem;
+}
+
+.payment-summary-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.payment-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.payment-main-column,
+.payment-side-column {
+  display: grid;
+  gap: 1rem;
+}
+
+.payment-inline-note {
+  margin-top: 0.2rem;
+}
+
+.payment-error-note {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.payment-method-grid {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.payment-method-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.payment-field {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.payment-submit-btn {
+  width: 100%;
+}
+
+.payment-receipt-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.payment-receipt-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 1000px) {
+  .payment-grid {
+    grid-template-columns: 1fr 360px;
+    align-items: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .payment-method-toggle .btn,
+  .payment-receipt-actions .btn {
+    width: 100%;
+  }
+}

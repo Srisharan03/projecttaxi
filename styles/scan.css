@@ -2,11 +2,59 @@
   padding: 2rem 0 4rem;
 }
 
+.scan-intro-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .scan-grid {
   display: grid;
-  gap: 1.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  margin-top: 1.5rem;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.scan-console-card {
+  border-color: #d7e4f7;
+}
+
+.scan-form-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.scan-field {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.scan-verify-btn {
+  width: 100%;
+}
+
+.scan-result-card {
+  border-color: #dbe2f1;
+}
+
+.scan-result-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.scan-result-message {
+  margin-top: 0;
+}
+
+.scan-result-message-error {
+  margin-top: 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.scan-payable-card {
+  border-color: #cfe6da;
 }
 
 .qr-shell {
@@ -30,5 +78,12 @@
 @media (max-width: 600px) {
   .scan-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 980px) {
+  .scan-grid {
+    grid-template-columns: 1fr 360px;
+    align-items: start;
   }
 }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -130,9 +130,9 @@ export default function VendorRequestsPage() {
       <section className="section">
         <Card title="Booking Requests" subtitle="Approve or reject user booking requests for your time slots.">
           <div className="form-grid">
-            <div style={{ display: "grid", gap: "0.8rem", gridTemplateColumns: "1fr auto" }}>
+            <div className="vendor-toolbar">
               <label className="vendor-form-field">
-                <span className="vendor-form-label">Vendor Profile</span>
+                <span className="vendor-form-label">Owner Profile</span>
                 <select
                   className="select"
                   value={effectiveVendorId}
@@ -146,7 +146,7 @@ export default function VendorRequestsPage() {
                 </select>
               </label>
 
-              <div className="hero-actions" style={{ alignSelf: "end" }}>
+              <div className="vendor-toolbar-actions">
                 <Link href="/vendor/dashboard">
                   <Button variant="secondary">Back to Dashboard</Button>
                 </Link>
@@ -154,9 +154,9 @@ export default function VendorRequestsPage() {
             </div>
 
             {selectedVendor ? (
-              <div className="hero-actions">
+              <div className="vendor-summary-row">
                 <Badge tone={selectedVendor.status === "approved" ? "success" : "warning"}>
-                  Vendor status: {selectedVendor.status}
+                  Owner status: {selectedVendor.status}
                 </Badge>
                 <Badge tone={pendingCount > 0 ? "warning" : "success"}>
                   Pending Notifications: {pendingCount}
@@ -165,15 +165,15 @@ export default function VendorRequestsPage() {
               </div>
             ) : null}
 
-            {statusMessage ? <p className="card-subtitle" style={{ color: "#0f766e" }}>{statusMessage}</p> : null}
-            {errorMessage ? <p className="card-subtitle" style={{ color: "#b91c1c" }}>{errorMessage}</p> : null}
+            {statusMessage ? <p className="card-subtitle vendor-status-note-success">{statusMessage}</p> : null}
+            {errorMessage ? <p className="card-subtitle vendor-status-note-error">{errorMessage}</p> : null}
           </div>
         </Card>
       </section>
 
       <section className="section">
         {!vendorRequests.length ? (
-          <Card title="No Requests" subtitle="No booking requests found for this vendor yet." />
+          <Card title="No Requests" subtitle="No booking requests found for this owner yet." />
         ) : (
           <div className="form-grid">
             {vendorRequests.map((session) => {
@@ -184,11 +184,12 @@ export default function VendorRequestsPage() {
               return (
                 <Card
                   key={session.id}
-                  title={`${spot?.name ?? "Unknown Spot"} • ${session.vehicle_number}`}
+                  title={`${spot?.name ?? "Unknown Spot"} - ${session.vehicle_number}`}
                   subtitle={`${formatDateTime(session.start_time_iso)} to ${formatDateTime(session.end_time_iso)}`}
+                  className="vendor-request-card"
                 >
                   <div className="form-grid">
-                    <div className="hero-actions">
+                    <div className="vendor-request-badges">
                       <Badge
                         tone={
                           approval === "accepted"
@@ -207,10 +208,13 @@ export default function VendorRequestsPage() {
                       <Badge tone="neutral">Fixed Amount: Rs {Math.round(session.amount || 0)}</Badge>
                     </div>
 
-                    <p className="card-subtitle">Booking Code: {session.access_code || "-"}</p>
+                    <div className="vendor-request-meta">
+                      <p className="card-subtitle">Booking Code: {session.access_code || "-"}</p>
+                      <p className="card-subtitle">Vehicle Type: {session.vehicle_type || "-"}</p>
+                    </div>
 
                     {approval === "pending" ? (
-                      <div className="hero-actions">
+                      <div className="vendor-request-actions">
                         <Button
                           type="button"
                           onClick={() => void handleDecision(session.id, "accepted")}
@@ -238,3 +242,4 @@ export default function VendorRequestsPage() {
     </div>
   );
 }
+

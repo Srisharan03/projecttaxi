@@ -6,7 +6,8 @@
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:vnrv": "node seed/seed-vnrv-demo-data.mjs"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.7",

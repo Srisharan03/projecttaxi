@@ -23,8 +23,8 @@ export function PaymentMethodCards({
 }: PaymentMethodCardsProps) {
   return (
     <Card title="Payment Method" subtitle="Use UPI for instant confirmation or cash OTP mode.">
-      <div className="form-grid">
-        <div className="hero-actions">
+      <div className="payment-method-grid">
+        <div className="payment-method-toggle">
           <Button variant={method === "upi" ? "primary" : "secondary"} onClick={() => onMethodChange("upi")}>
             UPI
           </Button>
@@ -34,7 +34,7 @@ export function PaymentMethodCards({
         </div>
 
         {method === "upi" ? (
-          <label>
+          <label className="payment-field">
             <span className="card-subtitle">UPI app</span>
             <select
               className="select"
@@ -49,7 +49,7 @@ export function PaymentMethodCards({
             </select>
           </label>
         ) : (
-          <label>
+          <label className="payment-field">
             <span className="card-subtitle">Cash OTP (demo)</span>
             <input
               className="input"
@@ -61,7 +61,7 @@ export function PaymentMethodCards({
           </label>
         )}
 
-        <Button onClick={onPay} isLoading={isLoading}>
+        <Button onClick={onPay} isLoading={isLoading} className="payment-submit-btn">
           Complete Payment
         </Button>
       </div>

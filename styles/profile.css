@@ -1,0 +1,47 @@
+.profile-shell {
+  margin: 2rem auto;
+}
+
+.profile-shell-narrow {
+  max-width: 760px;
+}
+
+.profile-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-image-section {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+}
+
+.profile-image-input-wrap {
+  width: 100%;
+  max-width: 420px;
+  margin: 0;
+}
+
+.profile-avatar {
+  width: 140px;
+  height: 140px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid var(--line-soft);
+}
+
+.profile-empty-image-note {
+  text-align: center;
+}
+
+.profile-note-success {
+  color: #166534;
+  font-weight: 600;
+}
+
+.profile-note-error {
+  color: #b91c1c;
+  font-weight: 600;
+}

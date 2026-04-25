@@ -7,8 +7,7 @@ interface SearchBarProps {
   isSearching?: boolean;
 }
 
-import { Card } from "@/components/ui";
-import { Button } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/ui";
 
 export function SearchBar({
   value,
@@ -21,30 +20,41 @@ export function SearchBar({
   const canSearch = value.trim().length > 0;
 
   return (
-    <Card title="Destination" subtitle="Search where you want to park, then load nearby public parking.">
+    <Card className="map-search-card" title="Find Parking" subtitle="Start with destination, then refine spot list.">
       <div className="form-grid">
-        <input
-          className="input"
-          placeholder="Try Banjara Hills, Jubilee Hills..."
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && canSearch) {
-              onSearchDestination();
-            }
-          }}
-        />
+        <label className="map-field">
+          <span className="map-field-label">Destination</span>
+          <input
+            className="input"
+            placeholder="Ex: Banjara Hills, Jubilee Hills..."
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && canSearch) {
+                onSearchDestination();
+              }
+            }}
+          />
+        </label>
 
         <Button onClick={onSearchDestination} disabled={!canSearch} isLoading={isSearching}>
-          Find Public Parking Near Destination
+          Load Nearby Spots
         </Button>
 
-        <input
-          className="input"
-          placeholder="Filter nearby spots by name or address..."
-          value={spotSearch}
-          onChange={(event) => onSpotSearchChange(event.target.value)}
-        />
+        <label className="map-field">
+          <span className="map-field-label">Quick Filter</span>
+          <input
+            className="input"
+            placeholder="Filter spots by name or address..."
+            value={spotSearch}
+            onChange={(event) => onSpotSearchChange(event.target.value)}
+          />
+        </label>
+
+        <div className="map-search-chips">
+          <Badge tone="info">Realtime ranking</Badge>
+          <Badge tone="success">Public + owner spots</Badge>
+        </div>
       </div>
     </Card>
   );

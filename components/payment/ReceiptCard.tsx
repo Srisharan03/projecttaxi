@@ -10,7 +10,7 @@ interface ReceiptCardProps {
 export function ReceiptCard({ session }: ReceiptCardProps) {
   return (
     <Card title="Payment Receipt" subtitle="Booking confirmed. Use OTP verification for check-in/out.">
-      <div className="form-grid">
+      <div className="payment-receipt-grid">
         <div className="toggle-row">
           <span>Session</span>
           <strong>{session.id}</strong>
@@ -27,7 +27,7 @@ export function ReceiptCard({ session }: ReceiptCardProps) {
           <span>Payment</span>
           <Badge tone="success">{session.payment_status}</Badge>
         </div>
-        <div className="hero-actions">
+        <div className="payment-receipt-actions">
           <Link href="/scan">
             <Button>Verify OTP</Button>
           </Link>

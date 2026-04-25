@@ -30,20 +30,22 @@ export default function RootLayout({
   }, [initializeAuth]);
 
   return (
-    <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
-      <body>
+    <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <GoogleMapsProvider>
           <div className="site-root">
             <Navbar />
-            <Link
-              href="/admin/dashboard"
-              className="admin-portal-fab"
-              aria-label="Open admin portal"
-              title="Admin Portal"
-            >
-              A
-            </Link>
-            <main>{children}</main>
+            <div className="site-content">
+              <Link
+                href="/admin/dashboard"
+                className="admin-portal-fab"
+                aria-label="Open admin portal"
+                title="Admin Portal"
+              >
+                A
+              </Link>
+              <main className="site-main">{children}</main>
+            </div>
           </div>
         </GoogleMapsProvider>
       </body>

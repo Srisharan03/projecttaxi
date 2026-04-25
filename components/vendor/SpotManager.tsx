@@ -8,7 +8,7 @@ interface SpotManagerProps {
 
 export function SpotManager({ spots, onToggleStatus }: SpotManagerProps) {
   if (!spots.length) {
-    return <p className="card-subtitle">No spots yet for this vendor.</p>;
+    return <p className="card-subtitle">No spots yet for this owner.</p>;
   }
 
   return (
@@ -21,7 +21,7 @@ export function SpotManager({ spots, onToggleStatus }: SpotManagerProps) {
             </span>
             <Badge tone={spot.status === "open" ? "success" : "neutral"}>{spot.status}</Badge>
           </div>
-          <div className="hero-actions" style={{ marginTop: "0.75rem" }}>
+          <div className="hero-actions vendor-spot-manager-actions">
             <Button
               variant={spot.status === "open" ? "secondary" : "primary"}
               onClick={() => onToggleStatus(spot.id!, spot.status)}

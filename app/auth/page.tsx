@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Card, Button } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/ui";
 import { useAuthStore } from "@/store/authStore";
+import "@/styles/auth.css";
 
 export default function AuthSelectionPage() {
   const router = useRouter();
@@ -14,35 +16,46 @@ export default function AuthSelectionPage() {
   };
 
   return (
-    <div className="shell" style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ maxWidth: "800px", width: "100%" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "2rem", fontSize: "2.5rem", fontWeight: 800 }}>
-          How would you like to continue?
-        </h1>
-        
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "2rem" }}>
-          <Card 
-            title="I am a Driver" 
-            subtitle="Find, book, and navigate to parking spots in seconds."
-          >
-            <div style={{ marginTop: "1.5rem" }}>
-              <Button onClick={() => handleSelect("user")} style={{ width: "100%" }}>
-                Continue as User
+    <div className="auth-page shell">
+      <div className="auth-shell auth-role-layout">
+        <section className="auth-hero">
+          <div>
+            <Badge tone="info">PARKING APP ACCESS</Badge>
+            <h1>Choose your role and continue in one clean flow.</h1>
+            <p>
+              Driver and owner journeys are separated so each user gets the right actions,
+              faster decisions, and less clutter from the first screen.
+            </p>
+          </div>
+          <Image
+            src="/car-hero.svg"
+            alt="Parking experience visual"
+            width={900}
+            height={520}
+            className="auth-hero-media"
+            priority
+          />
+        </section>
+
+        <section className="form-grid" style={{ alignContent: "center" }}>
+          <Card className="auth-choice-card" title="I am a Driver" subtitle="Find, compare, and book parking quickly.">
+            <div className="auth-choice-grid">
+              <p className="auth-choice-text">Best for people who want to search near destination and park without confusion.</p>
+              <Button size="lg" onClick={() => handleSelect("user")}>
+                Continue as Driver
               </Button>
             </div>
           </Card>
 
-          <Card 
-            title="I am a Vendor" 
-            subtitle="List your parking space and manage live occupancy."
-          >
-            <div style={{ marginTop: "1.5rem" }}>
-              <Button onClick={() => handleSelect("vendor")} variant="secondary" style={{ width: "100%" }}>
-                Continue as Vendor
+          <Card className="auth-choice-card" title="I am an Owner" subtitle="Register and manage your parking inventory.">
+            <div className="auth-choice-grid">
+              <p className="auth-choice-text">Best for owners who want to list spots, handle requests, and track status in realtime.</p>
+              <Button size="lg" variant="secondary" onClick={() => handleSelect("vendor")}>
+                Continue as Owner
               </Button>
             </div>
           </Card>
-        </div>
+        </section>
       </div>
     </div>
   );

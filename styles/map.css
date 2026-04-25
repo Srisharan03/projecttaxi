@@ -1,50 +1,202 @@
 .map-page {
-  padding: 1rem 0 1.5rem;
+  padding: 0.7rem 0 1.6rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.map-top-section {
+  padding: 0.7rem 0 0.25rem;
+}
+
+.map-vehicle-card {
+  border-radius: 18px;
+  border: 1px solid #d7e6f4;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
 }
 
 .map-grid {
   display: grid;
   gap: 1rem;
+  grid-template-columns: minmax(330px, 410px) 1fr;
+  align-items: start;
+}
+
+.map-sidebar {
+  position: sticky;
+  top: 5.1rem;
+  max-height: calc(100dvh - 6.1rem);
+  overflow-y: auto;
+  padding-right: 0.2rem;
+  animation: map-slide-in 0.38s ease both;
+}
+
+.map-canvas-wrap {
+  animation: map-fade-in 0.45s ease both;
 }
 
 .map-shell {
-  min-height: 60vh;
+  height: clamp(460px, calc(100dvh - 8.5rem), 760px);
+  min-height: 460px;
   overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid #d8e6f4;
+  background: linear-gradient(140deg, #f8fbff, #ffffff);
+}
+
+.map-search-card,
+.map-filter-card {
+  border-radius: 16px;
+  border: 1px solid #d7e5f3;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.map-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.map-field-label {
+  font-size: 0.78rem;
+  color: #64748b;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.map-search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.spot-list-wrap {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.spot-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.1rem 0.2rem;
+}
+
+.spot-list-head h3 {
+  margin: 0;
+  font-size: 1.06rem;
+}
+
+.spot-list {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.map-empty-state {
+  padding: 0.85rem;
+  border-radius: 14px;
+}
+
+.spot-card {
+  border-radius: 16px;
+  border: 1px solid #d8e6f4;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.spot-card:hover {
+  transform: translateY(-2px);
 }
 
 .spot-card-selected {
-  border-color: var(--text-primary);
-  box-shadow: var(--shadow-strong);
-  background: var(--bg-primary);
+  border-color: #2563eb;
+  box-shadow: 0 20px 36px -30px rgba(37, 99, 235, 0.5);
+  background: #ffffff;
 }
 
 .spot-card-public {
-  border-left: 4px solid #0284c7;
+  border-left: 4px solid #0ea5e9;
 }
 
 .spot-card-vendor {
   border-left: 4px solid #0f766e;
 }
 
+.spot-card-badges {
+  gap: 0.35rem;
+}
+
 .spot-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem 1rem;
-  margin-bottom: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.55rem;
 }
 
 .spot-card-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  font-size: 0.72rem;
+  color: #64748b;
   text-transform: uppercase;
   font-weight: 700;
-  letter-spacing: 0.025em;
+  letter-spacing: 0.04em;
 }
 
 .spot-card-value {
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #0f172a;
+}
+
+.spot-card-meta-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.spot-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.spot-card-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.spot-icon-btn {
+  width: 2.05rem;
+  height: 2.05rem;
+  border-radius: 999px;
+  border: 1px solid #c9d7ea;
+  background: #f8fbff;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.spot-icon-btn:hover {
+  border-color: #94a3b8;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.spot-icon-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.spot-card-primary-action {
+  min-width: 9.8rem;
+}
+
+.spot-card-span-2 {
+  grid-column: span 2;
 }
 
 .public-audit-modal {
@@ -127,7 +279,75 @@
   overflow-wrap: anywhere;
 }
 
+@keyframes map-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes map-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 1120px) {
+  .map-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-sidebar {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .map-canvas-wrap {
+    order: -1;
+  }
+
+  .map-shell {
+    min-height: 52vh;
+    height: 52vh;
+  }
+}
+
 @media (max-width: 768px) {
+  .map-page {
+    padding-top: 0.35rem;
+  }
+
+  .map-top-section {
+    padding-top: 0;
+  }
+
+  .map-grid {
+    gap: 0.8rem;
+  }
+
+  .map-shell {
+    min-height: 300px;
+    height: 46vh;
+  }
+
+  .spot-list-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .public-audit-modal {
     width: min(100%, 100%);
   }
@@ -138,5 +358,38 @@
 
   .public-audit-history-list {
     max-height: 40dvh;
+  }
+
+  .spot-card-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .spot-card-meta-row {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .spot-card-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .spot-card-quick-actions {
+    justify-content: flex-start;
+  }
+
+  .spot-card-primary-action {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .spot-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .spot-card-span-2 {
+    grid-column: auto;
   }
 }

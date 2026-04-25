@@ -1,10 +1,182 @@
-.admin-page {
-  padding: 2rem 0 4rem;
+﻿.admin-page {
+  padding: 1.25rem 0 3.5rem;
 }
 
 .admin-grid {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.1rem;
+}
+
+.admin-hero-card,
+.admin-review-card {
+  border: 1px solid #d9e4f3;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.admin-stat-card {
+  border: 1px solid #dce6f4;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.7rem 0.75rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.admin-stat-label {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.admin-stat-value {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.admin-controls-wrap {
+  display: grid;
+  gap: 0.65rem;
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.65rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.admin-tab-row,
+.admin-status-filter-row,
+.admin-vendor-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-community-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.95rem;
+}
+
+.admin-community-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-community-card {
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.5rem;
+  border-color: #dbe2f1;
+}
+
+.admin-community-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.admin-community-title {
+  margin-top: 0.1rem;
+}
+
+.admin-community-meta {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.admin-community-meta .card-subtitle {
+  margin: 0;
+}
+
+.admin-community-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-vendor-list-wrap {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-vendor-table-wrap {
+  border-color: #dbe2f1;
+}
+
+.admin-vendor-mobile-list {
+  display: none;
+  gap: 0.65rem;
+}
+
+.admin-vendor-mobile-card {
+  padding: 0.8rem;
+  border-color: #dbe2f1;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-vendor-mobile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.admin-vendor-mobile-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.admin-approval-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.admin-approval-panel {
+  padding: 0.75rem;
+}
+
+.admin-approval-heading {
+  margin-bottom: 0.4rem;
+}
+
+.admin-approval-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.admin-spot-review-card {
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-proof-image {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  object-fit: cover;
 }
 
 .table-wrap {
@@ -17,23 +189,23 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 800px;
+  min-width: 760px;
 }
 
 .table th,
 .table td {
   text-align: left;
-  padding: 1rem 1.25rem;
+  padding: 0.88rem 1rem;
   border-bottom: 1px solid var(--line-soft);
 }
 
 .table th {
-  color: var(--text-muted);
+  color: #8ca0bd;
   font-weight: 700;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: var(--bg-secondary);
+  background: #f5f8fd;
 }
 
 .table tr:last-child td {
@@ -41,5 +213,40 @@
 }
 
 .table tr:hover td {
-  background: var(--bg-secondary);
+  background: #f8fbff;
+}
+
+@media (max-width: 1160px) {
+  .admin-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-community-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 780px) {
+  .admin-page {
+    padding-top: 0.8rem;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-tab-row .btn,
+  .admin-status-filter-row .btn,
+  .admin-community-actions .btn,
+  .admin-approval-actions .btn {
+    width: 100%;
+  }
+
+  .admin-vendor-table-wrap {
+    display: none;
+  }
+
+  .admin-vendor-mobile-list {
+    display: grid;
+  }
 }

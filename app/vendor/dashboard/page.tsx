@@ -282,9 +282,9 @@ export default function VendorDashboardPage() {
           subtitle="Track live occupancy, control availability, and edit your parking spots."
         >
           <div className="form-grid">
-            <div style={{ display: "grid", gap: "0.8rem", gridTemplateColumns: "1fr auto" }}>
+            <div className="vendor-toolbar">
               <label className="vendor-form-field">
-                <span className="vendor-form-label">Vendor Profile</span>
+                <span className="vendor-form-label">Owner Profile</span>
                 <select
                   className="select"
                   value={effectiveVendorId}
@@ -298,7 +298,7 @@ export default function VendorDashboardPage() {
                 </select>
               </label>
 
-              <div className="hero-actions" style={{ alignSelf: "end" }}>
+              <div className="vendor-toolbar-actions">
                 <Link href="/vendor/requests">
                   <Button variant="secondary">
                     Booking Requests {pendingRequestCount > 0 ? `(${pendingRequestCount})` : ""}
@@ -311,9 +311,9 @@ export default function VendorDashboardPage() {
             </div>
 
             {selectedVendor ? (
-              <div className="hero-actions">
+              <div className="vendor-summary-row">
                 <Badge tone={selectedVendor.status === "approved" ? "success" : "warning"}>
-                  Vendor status: {selectedVendor.status}
+                  Owner status: {selectedVendor.status}
                 </Badge>
                 <Badge tone="info">Spots: {totalSpots}</Badge>
                 <Badge tone="success">Open now: {openSpots}</Badge>
@@ -324,8 +324,8 @@ export default function VendorDashboardPage() {
               </div>
             ) : null}
 
-            {statusMessage ? <p className="card-subtitle" style={{ color: "#0f766e" }}>{statusMessage}</p> : null}
-            {errorMessage ? <p className="card-subtitle" style={{ color: "#b91c1c" }}>{errorMessage}</p> : null}
+            {statusMessage ? <p className="card-subtitle vendor-status-note-success">{statusMessage}</p> : null}
+            {errorMessage ? <p className="card-subtitle vendor-status-note-error">{errorMessage}</p> : null}
           </div>
         </Card>
       </section>
@@ -351,16 +351,16 @@ export default function VendorDashboardPage() {
                           alt={`${spot.name} cover`}
                           width={240}
                           height={140}
-                          style={{ width: "180px", height: "110px", objectFit: "cover", borderRadius: "10px" }}
+                          className="vendor-spot-cover"
                           unoptimized
                         />
                       ) : (
-                        <div className="vendor-preview-file-tag" style={{ width: "180px", height: "110px" }}>
+                        <div className="vendor-preview-file-tag vendor-spot-cover">
                           No Image
                         </div>
                       )}
 
-                      <div className="form-grid" style={{ gap: "0.5rem", flex: 1 }}>
+                      <div className="form-grid vendor-ops-meta">
                         <div className="hero-actions">
                           <Badge tone={spot.is_approved ? "success" : "warning"}>
                             {spot.is_approved ? "Approved" : "Pending Approval"}

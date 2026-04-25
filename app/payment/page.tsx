@@ -9,6 +9,7 @@ import { Badge, Button, Card } from "@/components/ui";
 import { getSessionById, markSessionPaid, type Session } from "@/lib/firestore";
 import { formatCurrency } from "@/lib/utils";
 import "@/styles/booking.css";
+import "@/styles/payment.css";
 
 type SessionWithId = Session & { id: string };
 
@@ -63,11 +64,11 @@ function PaymentPageContent() {
   };
 
   return (
-    <div className="booking-page shell">
+    <div className="payment-page shell">
       <section className="section">
         <Card title="Payment" subtitle="Complete payment to unlock check-in flow.">
           {session ? (
-            <div className="hero-actions">
+            <div className="payment-summary-badges">
               <Badge tone="info">Session: {session.id}</Badge>
               <Badge tone="neutral">Amount: {formatCurrency(session.amount || 0)}</Badge>
               <Badge tone={mode === "entry" ? "warning" : "info"}>
@@ -78,42 +79,48 @@ function PaymentPageContent() {
               </Badge>
             </div>
           ) : (
-            <p className="card-subtitle">Load a session from booking first.</p>
+            <p className="card-subtitle payment-inline-note">Load a session from booking first.</p>
           )}
         </Card>
       </section>
 
-      <section className="booking-grid">
-        <PaymentMethodCards
-          method={method}
-          upiProvider={upiProvider}
-          cashOtp={cashOtp}
-          onMethodChange={setMethod}
-          onUpiProviderChange={setUpiProvider}
-          onCashOtpChange={setCashOtp}
-          onPay={() => void completePayment()}
-          isLoading={processing}
-        />
+      <section className="payment-grid">
+        <div className="payment-main-column">
+          <PaymentMethodCards
+            method={method}
+            upiProvider={upiProvider}
+            cashOtp={cashOtp}
+            onMethodChange={setMethod}
+            onUpiProviderChange={setUpiProvider}
+            onCashOtpChange={setCashOtp}
+            onPay={() => void completePayment()}
+            isLoading={processing}
+          />
+        </div>
 
-        {session && session.payment_status === "paid" ? (
-          <div className="form-grid">
-            <ReceiptCard session={session} />
-            {spotId ? (
-              <Link href={`/booking?spotId=${spotId}`}>
-                <Button>Back to Booking</Button>
-              </Link>
-            ) : null}
-          </div>
-        ) : (
-          <Card title="Receipt Pending">
-            <p className="card-subtitle">Complete payment to generate receipt and continue.</p>
-          </Card>
-        )}
+        <div className="payment-side-column">
+          {session && session.payment_status === "paid" ? (
+            <div className="form-grid">
+              <ReceiptCard session={session} />
+              {spotId ? (
+                <Link href={`/booking?spotId=${spotId}`}>
+                  <Button>Back to Booking</Button>
+                </Link>
+              ) : null}
+            </div>
+          ) : (
+            <Card title="Receipt Pending">
+              <p className="card-subtitle payment-inline-note">
+                Complete payment to generate receipt and continue.
+              </p>
+            </Card>
+          )}
+        </div>
       </section>
 
       {error ? (
         <section className="section">
-          <p className="card-subtitle">{error}</p>
+          <p className="card-subtitle payment-error-note">{error}</p>
         </section>
       ) : null}
     </div>
@@ -124,7 +131,7 @@ export default function PaymentPage() {
   return (
     <Suspense
       fallback={
-        <div className="booking-page shell">
+        <div className="payment-page shell">
           <section className="section">
             <Card title="Payment">
               <p className="card-subtitle">Loading payment session...</p>

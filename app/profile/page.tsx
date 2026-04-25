@@ -6,6 +6,7 @@ import { Badge, Button, Card } from "@/components/ui";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 import { getUserProfile, upsertUserProfile } from "@/lib/firestore";
 import { useAuthStore } from "@/store/authStore";
+import "@/styles/profile.css";
 
 export default function UserProfilePage() {
   const user = useAuthStore((state) => state.user);
@@ -102,22 +103,22 @@ export default function UserProfilePage() {
 
   if (!user) {
     return (
-      <div className="shell" style={{ margin: "2rem auto" }}>
+      <div className="shell profile-shell">
         <Card title="User Profile" subtitle="Please login to manage your profile." />
       </div>
     );
   }
 
   return (
-    <div className="shell" style={{ margin: "2rem auto", maxWidth: "760px" }}>
+    <div className="shell profile-shell profile-shell-narrow">
       <Card title="User Profile" subtitle="Manage your account details.">
         <div className="form-grid">
-          <div className="hero-actions" style={{ justifyContent: "center" }}>
+          <div className="profile-status-row">
             <Badge tone={loading ? "warning" : "success"}>{loading ? "Loading..." : "Ready"}</Badge>
           </div>
 
-          <div style={{ display: "grid", justifyItems: "center", gap: "0.75rem" }}>
-            <label style={{ width: "100%", maxWidth: "420px" }}>
+          <div className="profile-image-section">
+            <label className="profile-image-input-wrap">
               <span className="card-subtitle">Profile Image</span>
               <input
                 className="input"
@@ -134,10 +135,10 @@ export default function UserProfilePage() {
                 width={220}
                 height={220}
                 unoptimized
-                style={{ width: "140px", height: "140px", borderRadius: "999px", objectFit: "cover", border: "1px solid var(--line-soft)" }}
+                className="profile-avatar"
               />
             ) : (
-              <p className="card-subtitle" style={{ textAlign: "center" }}>No profile image uploaded yet.</p>
+              <p className="card-subtitle profile-empty-image-note">No profile image uploaded yet.</p>
             )}
           </div>
 
@@ -159,8 +160,8 @@ export default function UserProfilePage() {
           <Button onClick={() => void handleSave()} isLoading={busy || loading}>
             Save Profile
           </Button>
-          {message ? <p className="card-subtitle" style={{ color: "#166534" }}>{message}</p> : null}
-          {error ? <p className="card-subtitle" style={{ color: "#b91c1c" }}>{error}</p> : null}
+          {message ? <p className="card-subtitle profile-note-success">{message}</p> : null}
+          {error ? <p className="card-subtitle profile-note-error">{error}</p> : null}
         </div>
       </Card>
     </div>

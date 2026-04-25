@@ -27,10 +27,20 @@ export function MobileNav({ items }: MobileNavProps) {
         className="mobile-nav-trigger"
         aria-expanded={open}
         aria-controls="mobile-nav-menu"
+        aria-label={open ? "Close navigation menu" : "Open navigation menu"}
         onClick={() => setOpen((value) => !value)}
       >
-        Menu
+        <span>Menu</span>
+        <span className={cn("mobile-nav-burger", open ? "mobile-nav-burger-open" : "")} aria-hidden="true" />
       </button>
+
+      <button
+        type="button"
+        className={cn("mobile-nav-backdrop", open ? "mobile-nav-backdrop-open" : "")}
+        aria-hidden={!open}
+        tabIndex={open ? 0 : -1}
+        onClick={() => setOpen(false)}
+      />
 
       <div className={cn("mobile-nav-menu", open ? "mobile-nav-menu-open" : "")} id="mobile-nav-menu">
         {items.map((item) => {
